@@ -27,6 +27,51 @@ export interface MatanoSchemaSuggestion {
   keyFields: string[];
 }
 
+export const getMatanoSchemaMapping = (type: string): MatanoSchemaSuggestion => {
+  switch (type) {
+    case "zeek_dns":
+      return {
+        logSourceProduct: "zeek",
+        logSourceService: "dns",
+        icebergTable: "secops_datalake.zeek_dns_logs",
+        partitioning: "day(ts), bucket(20, qtype)",
+        keyFields: ["ts", "id.orig_h", "id.resp_h", "query", "qtype_name", "answers"]
+      };
+    case "cloudtrail":
+      return {
+        logSourceProduct: "aws",
+        logSourceService: "cloudtrail",
+        icebergTable: "secops_datalake.aws_cloudtrail_logs",
+        partitioning: "day(eventTime), eventSource",
+        keyFields: ["eventTime", "eventName", "eventSource", "userIdentity.arn", "sourceIPAddress"]
+      };
+    case "vpc_flow":
+      return {
+        logSourceProduct: "aws",
+        logSourceService: "vpcflow",
+        icebergTable: "secops_datalake.aws_vpc_flow_logs",
+        partitioning: "day(start), srcaddr",
+        keyFields: ["start", "srcaddr", "dstaddr", "srcport", "dstport", "bytes", "action"]
+      };
+    case "crowdstrike":
+      return {
+        logSourceProduct: "crowdstrike",
+        logSourceService: "process_creation",
+        icebergTable: "secops_datalake.crowdstrike_process_logs",
+        partitioning: "day(timestamp), ComputerName",
+        keyFields: ["timestamp", "ComputerName", "UserName", "ImageFileName", "CommandLine"]
+      };
+    default:
+      return {
+        logSourceProduct: "syslog",
+        logSourceService: "auth",
+        icebergTable: "secops_datalake.syslog_auth_logs",
+        partitioning: "day(ts)",
+        keyFields: ["ts", "hostname", "process", "message", "user"]
+      };
+  }
+};
+
 export const AiSigmaGenerator: React.FC<AiSigmaGeneratorProps> = ({ onApplyDraftToEditor }) => {
   const [prompt, setPrompt] = useState<string>("");
   const [logType, setLogType] = useState<string>("zeek_dns");
@@ -63,51 +108,6 @@ export const AiSigmaGenerator: React.FC<AiSigmaGeneratorProps> = ({ onApplyDraft
   const handleSelectSample = (sample: typeof samplePrompts[0]) => {
     setPrompt(sample.text);
     setLogType(sample.logType);
-  };
-
-  const getMatanoSchemaMapping = (type: string): MatanoSchemaSuggestion => {
-    switch (type) {
-      case "zeek_dns":
-        return {
-          logSourceProduct: "zeek",
-          logSourceService: "dns",
-          icebergTable: "secops_datalake.zeek_dns_logs",
-          partitioning: "day(ts), bucket(20, qtype)",
-          keyFields: ["ts", "id.orig_h", "id.resp_h", "query", "qtype_name", "answers"]
-        };
-      case "cloudtrail":
-        return {
-          logSourceProduct: "aws",
-          logSourceService: "cloudtrail",
-          icebergTable: "secops_datalake.aws_cloudtrail_logs",
-          partitioning: "day(eventTime), eventSource",
-          keyFields: ["eventTime", "eventName", "eventSource", "userIdentity.arn", "sourceIPAddress"]
-        };
-      case "vpc_flow":
-        return {
-          logSourceProduct: "aws",
-          logSourceService: "vpcflow",
-          icebergTable: "secops_datalake.aws_vpc_flow_logs",
-          partitioning: "day(start), srcaddr",
-          keyFields: ["start", "srcaddr", "dstaddr", "srcport", "dstport", "bytes", "action"]
-        };
-      case "crowdstrike":
-        return {
-          logSourceProduct: "crowdstrike",
-          logSourceService: "process_creation",
-          icebergTable: "secops_datalake.crowdstrike_process_logs",
-          partitioning: "day(timestamp), ComputerName",
-          keyFields: ["timestamp", "ComputerName", "UserName", "ImageFileName", "CommandLine"]
-        };
-      default:
-        return {
-          logSourceProduct: "syslog",
-          logSourceService: "auth",
-          icebergTable: "secops_datalake.syslog_auth_logs",
-          partitioning: "day(ts)",
-          keyFields: ["ts", "hostname", "process", "message", "user"]
-        };
-    }
   };
 
   const generateSigmaWithAi = async () => {
@@ -325,18 +325,52 @@ falsepositives:
             </div>
           </div>
 
-          {/* Matano Apache Iceberg Schema Mapping Box */}
+          {/* Matano Apache Iceberg Schema Mapping Box & Schema Validator Status */}
           {matanoSchema && (
-            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1.5 text-xs">
-              <div className="flex items-center space-x-2 text-purple-400 font-bold">
-                <Database className="w-4 h-4" />
-                <span>Matano / Apache Iceberg Target Schema Suggestion</span>
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-purple-400 font-bold">
+                  <Database className="w-4 h-4" />
+                  <span>Matano / Apache Iceberg Target Schema Binding</span>
+                </div>
+
+                {/* Validation Status Badge */}
+                {validationResult.isValid ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    Matano Schema Validated
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-950 text-red-400 border border-red-800 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-red-400" />
+                    {validationResult.errors.length} Schema Issue{validationResult.errors.length > 1 ? "s" : ""}
+                  </span>
+                )}
               </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] font-mono pt-1">
                 <div><span className="text-slate-500">Table:</span> <strong className="text-cyan-300">{matanoSchema.icebergTable}</strong></div>
                 <div><span className="text-slate-500">Partitioning:</span> <strong className="text-slate-300">{matanoSchema.partitioning}</strong></div>
                 <div><span className="text-slate-500">Key Schema Fields:</span> <strong className="text-emerald-300">{matanoSchema.keyFields.join(", ")}</strong></div>
               </div>
+
+              {/* Validation Warnings/Errors if any */}
+              {(!validationResult.isValid || validationResult.warnings.length > 0) && (
+                <div className="pt-2 border-t border-slate-900 space-y-1">
+                  {validationResult.errors.map((err, i) => (
+                    <div key={i} className="text-[11px] text-red-400 font-mono flex items-center gap-1.5">
+                      <AlertTriangle className="w-3 h-3 text-red-400 shrink-0" />
+                      <span>{err.message}</span>
+                    </div>
+                  ))}
+                  {validationResult.warnings.map((warn, i) => (
+                    <div key={i} className="text-[11px] text-amber-400 font-mono flex items-center gap-1.5">
+                      <HelpCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                      <span>{warn.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

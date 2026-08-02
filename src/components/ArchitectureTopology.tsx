@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { PipelineNode, CustomVariables } from "../types";
+import { PipelineNode, CustomVariables, ActiveTab } from "../types";
 import { initialPipelineNodes } from "../data/mockSecurityData";
 import { D3TopologyGraph } from "./D3TopologyGraph";
 import { 
@@ -19,18 +19,88 @@ import {
   Download,
   Activity,
   Sparkles,
-  Grid
+  Grid,
+  X,
+  Copy,
+  Check,
+  Terminal,
+  Play
 } from "lucide-react";
 
 interface TopologyProps {
   vars: CustomVariables;
   onOpenTerraformModule?: (moduleName: string) => void;
+  onNavigateTab?: (tab: ActiveTab) => void;
 }
 
-export const ArchitectureTopology: React.FC<TopologyProps> = ({ vars, onOpenTerraformModule }) => {
+export const ArchitectureTopology: React.FC<TopologyProps> = ({ vars, onOpenTerraformModule, onNavigateTab }) => {
   const [selectedNode, setSelectedNode] = useState<PipelineNode>(initialPipelineNodes[0]);
   const [topologyView, setTopologyView] = useState<"d3" | "cards">("d3");
   const [downloading, setDownloading] = useState<boolean>(false);
+  const [showCiCdModal, setShowCiCdModal] = useState<boolean>(false);
+  const [copiedSpec, setCopiedSpec] = useState<boolean>(false);
+
+  const buildspecContent = `version: 0.2
+
+env:
+  variables:
+    TF_VERSION: "1.6.6"
+    CHECKOV_VERSION: "3.2.0"
+    ENVIRONMENT: "${vars.environment}"
+    AWS_REGION: "${vars.awsRegion}"
+  parameter-store:
+    KMS_KEY_ARN: "/secops/${vars.environment}/kms_key_arn"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "[INFO] Installing HashiCorp Terraform \${TF_VERSION}..."
+      - wget -q https://releases.hashicorp.com/terraform/\${TF_VERSION}/terraform_\${TF_VERSION}_linux_amd64.zip
+      - unzip -q terraform_\${TF_VERSION}_linux_amd64.zip -d /usr/local/bin/
+      - echo "[INFO] Installing Checkov Static Analysis Scanner..."
+      - pip3 install --quiet checkov==\${CHECKOV_VERSION} tfsec
+
+  pre_build:
+    commands:
+      - echo "[INFO] Phase 1: Validating HCL Formatting..."
+      - terraform fmt -check -recursive
+      - echo "[INFO] Phase 2: Executing Checkov Static Security Analysis..."
+      - checkov -d . --framework terraform --compact --quiet --output cli
+      - echo "[INFO] Phase 3: Executing tfsec Security Analysis..."
+      - tfsec .
+
+  build:
+    commands:
+      - echo "[INFO] Phase 4: Initializing S3 Remote State & DynamoDB Locks..."
+      - terraform init -backend-config="bucket=tf-state-${vars.projectName}-${vars.environment}-${vars.awsRegion}"
+      - echo "[INFO] Phase 5: Validating Terraform Syntactical Structure..."
+      - terraform validate
+      - echo "[INFO] Phase 6: Generating Terraform Spec Diff Plan..."
+      - terraform plan -out=tfplan -no-color
+
+  post_build:
+    commands:
+      - echo "[INFO] Phase 7: Evaluating Auto-Apply Conditions..."
+      - |
+        if [ "$CODEBUILD_BUILD_SUCCEEDED" = "1" ] && [ "$EXECUTE_APPLY" = "true" ]; then
+          echo "[SUCCESS] Auto-applying Terraform changes to AWS Environment..."
+          terraform apply -auto-approve tfplan
+        else
+          echo "[INFO] Plan completed. Manual approval gate required before apply."
+        fi
+
+artifacts:
+  files:
+    - tfplan
+    - checkov_report.json`;
+
+  const handleCopySpec = () => {
+    navigator.clipboard.writeText(buildspecContent);
+    setCopiedSpec(true);
+    setTimeout(() => setCopiedSpec(false), 2000);
+  };
 
   const handleDownloadDeploymentPlan = () => {
     setDownloading(true);
@@ -273,16 +343,28 @@ export const ArchitectureTopology: React.FC<TopologyProps> = ({ vars, onOpenTerr
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => {
-                const cicdNode = initialPipelineNodes.find(n => n.id === "cicd-pipeline");
-                if (cicdNode) setSelectedNode(cicdNode);
-              }}
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 self-start sm:self-auto"
-            >
-              <Info className="w-3.5 h-3.5" />
-              Inspect CI/CD Spec
-            </button>
+            <div className="flex items-center space-x-2 self-start sm:self-auto">
+              <button
+                onClick={() => {
+                  const cicdNode = initialPipelineNodes.find(n => n.id === "cicd-pipeline");
+                  if (cicdNode) setSelectedNode(cicdNode);
+                  setShowCiCdModal(true);
+                }}
+                className="px-3.5 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white border border-cyan-400/40 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-md"
+              >
+                <Info className="w-4 h-4" />
+                <span>Inspect CI/CD Spec</span>
+              </button>
+              {onNavigateTab && (
+                <button
+                  onClick={() => onNavigateTab("cicd")}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>CI/CD Scanner</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Key Architecture Badges */}
@@ -384,6 +466,96 @@ export const ArchitectureTopology: React.FC<TopologyProps> = ({ vars, onOpenTerr
           )}
         </div>
       </div>
+
+      {/* CI/CD Buildspec Modal Dialog */}
+      {showCiCdModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-cyan-500/20 text-cyan-400 rounded-xl border border-cyan-500/30">
+                  <Terminal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    AWS CodeBuild Specification
+                    <span className="text-[10px] font-mono bg-cyan-950 text-cyan-400 border border-cyan-700/50 px-2 py-0.5 rounded">
+                      buildspec.yml
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    DevSecOps pipeline executing Checkov static analysis & tfsec before Terraform apply.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCiCdModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-4 text-xs font-sans">
+              {/* Checkov Security Gates Summary */}
+              <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="font-semibold text-slate-200">Enforced Gates:</span>
+                  <span className="text-slate-400">CKV_AWS_116 (KMS), CKV_AWS_19 (S3 Encryption), CKV_AWS_88 (mTLS)</span>
+                </div>
+                <button
+                  onClick={handleCopySpec}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg font-semibold flex items-center gap-1.5 transition-all text-[11px]"
+                >
+                  {copiedSpec ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-cyan-400" />}
+                  <span>{copiedSpec ? "Copied!" : "Copy YAML"}</span>
+                </button>
+              </div>
+
+              {/* YAML Code Block */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-300 overflow-x-auto max-h-[380px] leading-relaxed select-text shadow-inner">
+                <pre>{buildspecContent}</pre>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-950 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs text-slate-500 font-mono">
+                Trigger: Git Push (main branch) or CodePipeline Webhook
+              </div>
+              <div className="flex items-center space-x-2">
+                {onOpenTerraformModule && (
+                  <button
+                    onClick={() => {
+                      setShowCiCdModal(false);
+                      onOpenTerraformModule("buildspec.yml");
+                    }}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5"
+                  >
+                    <FileCode2 className="w-4 h-4" />
+                    <span>Open in IaC Inspector</span>
+                  </button>
+                )}
+                {onNavigateTab && (
+                  <button
+                    onClick={() => {
+                      setShowCiCdModal(false);
+                      onNavigateTab("cicd");
+                    }}
+                    className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl font-bold text-xs transition-all shadow-md flex items-center gap-1.5"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Launch Live CI/CD Scanner</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

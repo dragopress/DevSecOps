@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { ActiveTab, CustomVariables } from "./types";
+import { ActiveTab, CustomVariables, SigmaRule, ProjectPackage } from "./types";
+import { defaultSigmaRules } from "./data/mockSecurityData";
 import { Header } from "./components/Header";
 import { ArchitectureTopology } from "./components/ArchitectureTopology";
 import { TerraformInspector } from "./components/TerraformInspector";
@@ -28,6 +29,21 @@ export default function App() {
     glacierExpirationDays: 365
   });
 
+  const [rules, setRules] = useState<SigmaRule[]>(defaultSigmaRules);
+
+  const handleImportPackage = (importedData: ProjectPackage) => {
+    if (importedData.pipelineConfig) {
+      setVars(prev => ({
+        ...prev,
+        ...importedData.pipelineConfig
+      }));
+    }
+    const loadedRules = importedData.sigmaRules || (importedData as any).rules;
+    if (loadedRules && Array.isArray(loadedRules) && loadedRules.length > 0) {
+      setRules(loadedRules);
+    }
+  };
+
   // Dynamic live EPS variance
   useEffect(() => {
     const interval = setInterval(() => {
@@ -50,6 +66,9 @@ export default function App() {
         vars={vars}
         setVars={setVars}
         liveEps={liveEps}
+        rules={rules}
+        setRules={setRules}
+        onImportPackage={handleImportPackage}
       />
 
       {/* Main Content Area */}
@@ -58,6 +77,7 @@ export default function App() {
           <ArchitectureTopology
             vars={vars}
             onOpenTerraformModule={handleOpenTerraformModule}
+            onNavigateTab={(tab) => setActiveTab(tab)}
           />
         )}
 
@@ -70,7 +90,12 @@ export default function App() {
         )}
 
         {activeTab === "threat-detection" && (
-          <ThreatDetectionSandbox />
+          <ThreatDetectionSandbox
+            rules={rules}
+            setRules={setRules}
+            vars={vars}
+            onImportPackage={handleImportPackage}
+          />
         )}
 
         {activeTab === "data-lake" && (
@@ -100,3 +125,4 @@ export default function App() {
     </div>
   );
 }
+

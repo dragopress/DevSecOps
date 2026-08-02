@@ -102,3 +102,14 @@ export interface CustomVariables {
   glacierTransitionDays: number;
   glacierExpirationDays: number;
 }
+
+export interface ProjectPackage {
+  version: string;
+  exportedAt: string;
+  studio: string;
+  pipelineConfig: CustomVariables;
+  sigmaRules: SigmaRule[];
+  activeRuleId?: string;
+  customNotes?: string;
+}
+

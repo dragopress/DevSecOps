@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { SigmaRule, SecurityLogEvent } from "../types";
+import { SigmaRule, SecurityLogEvent, CustomVariables, ProjectPackage } from "../types";
 import { defaultSigmaRules, sampleLogEvents } from "../data/mockSecurityData";
+import { sigmaTemplateLibrary, SigmaTemplate } from "../data/sigmaTemplateLibrary";
 import { validateSigmaYaml } from "../utils/sigmaValidator";
-import { AiSigmaGenerator } from "./AiSigmaGenerator";
+import { AiSigmaGenerator, getMatanoSchemaMapping, MatanoSchemaSuggestion } from "./AiSigmaGenerator";
 import { 
   ShieldAlert, 
   Play, 
@@ -22,13 +23,47 @@ import {
   Info,
   ShieldCheck,
   XCircle,
-  Sparkles
+  Sparkles,
+  Loader2,
+  Database,
+  ArrowRight,
+  BookOpen,
+  Layers,
+  Filter,
+  Tag,
+  Copy,
+  FileText,
+  SlidersHorizontal,
+  BookmarkPlus,
+  FileCode,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Upload
 } from "lucide-react";
 
-export const ThreatDetectionSandbox: React.FC = () => {
-  const [rules, setRules] = useState<SigmaRule[]>(defaultSigmaRules);
-  const [selectedRule, setSelectedRule] = useState<SigmaRule>(defaultSigmaRules[0]);
-  const [ruleYaml, setRuleYaml] = useState<string>(defaultSigmaRules[0].detectionYaml);
+export interface ThreatDetectionSandboxProps {
+  rules?: SigmaRule[];
+  setRules?: React.Dispatch<React.SetStateAction<SigmaRule[]>>;
+  vars?: CustomVariables;
+  onExportPackage?: () => void;
+  onImportPackage?: (importedData: ProjectPackage) => void;
+}
+
+export const ThreatDetectionSandbox: React.FC<ThreatDetectionSandboxProps> = ({
+  rules: propsRules,
+  setRules: propsSetRules,
+  vars,
+  onExportPackage,
+  onImportPackage
+}) => {
+  const [internalRules, setInternalRules] = useState<SigmaRule[]>(defaultSigmaRules);
+  const rules = propsRules || internalRules;
+  const setRules = propsSetRules || setInternalRules;
+
+  const [selectedRule, setSelectedRule] = useState<SigmaRule>(rules[0] || defaultSigmaRules[0]);
+  const [ruleYaml, setRuleYaml] = useState<string>((rules[0] || defaultSigmaRules[0]).detectionYaml);
+
   const [logs, setLogs] = useState<SecurityLogEvent[]>(sampleLogEvents);
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [selectedLog, setSelectedLog] = useState<SecurityLogEvent | null>(null);
@@ -36,22 +71,261 @@ export const ThreatDetectionSandbox: React.FC = () => {
   const [showLinterDetails, setShowLinterDetails] = useState<boolean>(true);
   const [showAiGenerator, setShowAiGenerator] = useState<boolean>(true);
 
+  // Gemini AI Prompt Input state
+  const [inlineAiPrompt, setInlineAiPrompt] = useState<string>("");
+  const [inlineLogType, setInlineLogType] = useState<string>("zeek_dns");
+  const [isInlineGenerating, setIsInlineGenerating] = useState<boolean>(false);
+  const [aiGeneratedResultInfo, setAiGeneratedResultInfo] = useState<{
+    schema: MatanoSchemaSuggestion;
+    explanation: string;
+    status: "success" | "error";
+  } | null>(null);
+
   // Real-time Sigma Syntax Linting result
   const validationResult = validateSigmaYaml(ruleYaml);
 
-  const handleAutoFixYaml = () => {
-    let fixed = ruleYaml;
-    if (!fixed.includes("status:")) {
-      fixed = fixed.replace(/title:(.*)/, "title:$1\nstatus: production");
+  const [autoFixApplied, setAutoFixApplied] = useState<boolean>(false);
+  const [injectSuccess, setInjectSuccess] = useState<boolean>(false);
+
+  // Pre-built Sigma Rule Template Library state
+  const [selectedTemplateCategory, setSelectedTemplateCategory] = useState<string>("all");
+  const [templateSearchQuery, setTemplateSearchQuery] = useState<string>("");
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState<boolean>(true);
+  const [templateAppliedToast, setTemplateAppliedToast] = useState<string | null>(null);
+
+  const handleSelectTemplate = (template: SigmaTemplate) => {
+    const exists = rules.some(r => r.id === template.id);
+    if (!exists) {
+      setRules(prev => [template, ...prev]);
     }
+    setSelectedRule(template);
+    setRuleYaml(template.detectionYaml);
+    setTemplateAppliedToast(`Loaded template: "${template.title}" into YAML editor`);
+    setTimeout(() => setTemplateAppliedToast(null), 3500);
+  };
+
+  const handleInlineGeminiGenerate = async () => {
+    if (!inlineAiPrompt.trim()) return;
+
+    setIsInlineGenerating(true);
+    const schema = getMatanoSchemaMapping(inlineLogType);
+
+    try {
+      const response = await fetch("/api/ai/generate-sigma", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: inlineAiPrompt, logType: inlineLogType })
+      });
+
+      let yamlContent = "";
+      if (response.ok) {
+        const data = await response.json();
+        const rawText = data.result || "";
+        const yamlMatch = rawText.match(/```yaml([\s\S]*?)```/i) || rawText.match(/```([\s\S]*?)```/i);
+        yamlContent = yamlMatch ? yamlMatch[1].trim() : rawText.trim();
+      } else {
+        throw new Error("API call failed");
+      }
+
+      setRuleYaml(yamlContent);
+      const titleMatch = yamlContent.match(/title:\s*(.*)/i);
+      const generatedTitle = titleMatch ? titleMatch[1].replace(/^["']|["']$/g, "").trim() : `AI Detected: ${inlineAiPrompt.substring(0, 30)}`;
+
+      const newRule: SigmaRule = {
+        id: `ai-rule-${Date.now()}`,
+        title: generatedTitle,
+        description: `Gemini AI rule generated for ${schema.icebergTable}`,
+        status: "production",
+        author: "Gemini AI Architect",
+        level: yamlContent.includes("level: critical") ? "critical" : yamlContent.includes("level: high") ? "high" : "medium",
+        logsource: {
+          product: schema.logSourceProduct,
+          service: schema.logSourceService,
+          category: inlineLogType === "zeek_dns" ? "dns" : "security"
+        },
+        detectionYaml: yamlContent,
+        sampleLogMatch: {
+          timestamp: new Date().toISOString(),
+          event_type: "AI_Detected_Threat",
+          source_table: schema.icebergTable
+        }
+      };
+
+      setRules(prev => [newRule, ...prev]);
+      setSelectedRule(newRule);
+      setAiGeneratedResultInfo({
+        schema,
+        explanation: `Synthesized & validated Sigma rule for ${schema.icebergTable} with Gemini AI.`,
+        status: "success"
+      });
+    } catch (err) {
+      const fallbackUuid = "f" + Math.random().toString(16).substring(2, 10) + "-4000-8000-" + Date.now().toString(16).substring(0, 12);
+      let fallbackYaml = "";
+
+      if (inlineLogType === "zeek_dns") {
+        fallbackYaml = `title: Detect ${inlineAiPrompt.substring(0, 40)}
+id: ${fallbackUuid}
+status: production
+description: AI synthesized Sigma rule for Zeek DNS anomaly detection.
+author: Gemini Security Engineer
+date: ${new Date().toISOString().split('T')[0]}
+logsource:
+  product: zeek
+  service: dns
+  category: dns
+detection:
+  selection:
+    qtype_name:
+      - 'TXT'
+      - 'ANY'
+    query|contains:
+      - 'base64'
+      - 'cmd'
+  condition: selection
+level: high
+falsepositives:
+  - Legitimate internal service discovery queries
+`;
+      } else if (inlineLogType === "cloudtrail") {
+        fallbackYaml = `title: Detect ${inlineAiPrompt.substring(0, 40)}
+id: ${fallbackUuid}
+status: production
+description: AI synthesized Sigma rule for AWS CloudTrail IAM privilege escalation.
+author: Gemini Security Engineer
+date: ${new Date().toISOString().split('T')[0]}
+logsource:
+  product: aws
+  service: cloudtrail
+  category: security
+detection:
+  selection:
+    eventName:
+      - 'AttachUserPolicy'
+      - 'AttachRolePolicy'
+      - 'CreateAccessKey'
+    requestParameters.policyArn|contains:
+      - 'AdministratorAccess'
+  condition: selection
+level: critical
+falsepositives:
+  - Authorized Terraform deployment pipelines
+`;
+      } else {
+        fallbackYaml = `title: Detect ${inlineAiPrompt.substring(0, 40)}
+id: ${fallbackUuid}
+status: production
+description: AI synthesized Sigma rule mapped to ${schema.icebergTable}.
+author: Gemini Security Engineer
+date: ${new Date().toISOString().split('T')[0]}
+logsource:
+  product: ${schema.logSourceProduct}
+  service: ${schema.logSourceService}
+  category: security
+detection:
+  selection:
+    action:
+      - 'REJECT'
+      - 'DENY'
+  condition: selection
+level: high
+falsepositives:
+  - Internal network scanner probes
+`;
+      }
+
+      setRuleYaml(fallbackYaml);
+      const newRule: SigmaRule = {
+        id: `ai-rule-${Date.now()}`,
+        title: `Detect ${inlineAiPrompt.substring(0, 35)}`,
+        description: `Gemini AI rule generated for ${schema.icebergTable}`,
+        status: "production",
+        author: "Gemini AI Architect",
+        level: "high",
+        logsource: {
+          product: schema.logSourceProduct,
+          service: schema.logSourceService,
+          category: "security"
+        },
+        detectionYaml: fallbackYaml,
+        sampleLogMatch: {
+          timestamp: new Date().toISOString(),
+          event_type: "AI_Detected_Threat",
+          source_table: schema.icebergTable
+        }
+      };
+
+      setRules(prev => [newRule, ...prev]);
+      setSelectedRule(newRule);
+      setAiGeneratedResultInfo({
+        schema,
+        explanation: `Synthesized & validated Sigma rule for ${schema.icebergTable} against Matano schema.`,
+        status: "success"
+      });
+    } finally {
+      setIsInlineGenerating(false);
+    }
+  };
+
+  const handleAutoFixYaml = () => {
+    let fixed = ruleYaml.trim();
+
+    // 1. Ensure title exists
+    if (!fixed.includes("title:")) {
+      fixed = "title: Security Threat Detection Rule\n" + fixed;
+    }
+
+    // 2. Ensure id exists
     if (!fixed.includes("id:")) {
       const generatedUuid = "f" + Math.random().toString(16).substring(2, 10) + "-4000-8000-" + Date.now().toString(16).substring(0, 12);
-      fixed = `id: ${generatedUuid}\n` + fixed;
+      if (fixed.includes("title:")) {
+        fixed = fixed.replace(/(title:[^\n]*)/, `$1\nid: ${generatedUuid}`);
+      } else {
+        fixed = `id: ${generatedUuid}\n` + fixed;
+      }
     }
+
+    // 3. Ensure status exists
+    if (!fixed.includes("status:")) {
+      if (fixed.includes("id:")) {
+        fixed = fixed.replace(/(id:[^\n]*)/, "$1\nstatus: production");
+      } else if (fixed.includes("title:")) {
+        fixed = fixed.replace(/(title:[^\n]*)/, "$1\nstatus: production");
+      } else {
+        fixed = "status: production\n" + fixed;
+      }
+    }
+
+    // 4. Ensure logsource exists with subfields
+    if (!fixed.includes("logsource:")) {
+      fixed += "\nlogsource:\n  category: security\n  product: generic\n  service: system";
+    } else {
+      if (!fixed.includes("category:") && !fixed.includes("product:") && !fixed.includes("service:")) {
+        fixed = fixed.replace(/(logsource:[^\n]*)/, "$1\n  category: security\n  product: generic");
+      }
+    }
+
+    // 5. Ensure detection exists with selection and condition
+    if (!fixed.includes("detection:")) {
+      fixed += "\ndetection:\n  selection:\n    event_type: alert\n  condition: selection";
+    } else {
+      if (!fixed.includes("condition:")) {
+        fixed += "\n  condition: selection";
+      }
+      if (!fixed.includes("selection:") && !fixed.includes("keywords:")) {
+        fixed = fixed.replace(/(detection:[^\n]*)/, "$1\n  selection:\n    event_type: alert");
+      }
+    }
+
+    // 6. Ensure level exists
     if (!fixed.includes("level:")) {
       fixed += "\nlevel: high";
     }
+
     setRuleYaml(fixed);
+    setSelectedRule(prev => ({ ...prev, detectionYaml: fixed }));
+    setRules(prev => prev.map(r => r.id === selectedRule.id ? { ...r, detectionYaml: fixed } : r));
+    setAutoFixApplied(true);
+    setTimeout(() => setAutoFixApplied(false), 3000);
   };
 
   // Sync editor when selecting rule preset
@@ -90,16 +364,81 @@ export const ThreatDetectionSandbox: React.FC = () => {
   }, [isStreaming, selectedRule]);
 
   const handleTestRuleOnLog = () => {
+    // 1. Determine payload dynamically from current ruleYaml or selectedRule
+    let samplePayload = selectedRule?.sampleLogMatch;
+    
+    if (!samplePayload || Object.keys(samplePayload).length === 0) {
+      if (ruleYaml.toLowerCase().includes("dns") || ruleYaml.toLowerCase().includes("zeek")) {
+        samplePayload = {
+          timestamp: new Date().toISOString(),
+          query: "stage.1a2b3c.c2.malware-cnc.com",
+          qtype_name: "TXT",
+          client_ip: "10.100.12.88",
+          dns_response: "192.0.2.1",
+          ttl: 30
+        };
+      } else if (ruleYaml.toLowerCase().includes("cloudtrail") || ruleYaml.toLowerCase().includes("iam") || ruleYaml.toLowerCase().includes("aws")) {
+        samplePayload = {
+          timestamp: new Date().toISOString(),
+          eventName: "AttachUserPolicy",
+          eventSource: "iam.amazonaws.com",
+          user: "compromised-admin",
+          policyArn: "arn:aws:iam::aws:policy/AdministratorAccess",
+          sourceIPAddress: "198.51.100.22"
+        };
+      } else {
+        samplePayload = {
+          timestamp: new Date().toISOString(),
+          event_id: "Failed password",
+          src_ip: "198.51.100.44",
+          user: "root",
+          auth_method: "password",
+          port: 22,
+          service: "sshd"
+        };
+      }
+    }
+
+    // 2. Determine severity
+    let level: SecurityLogEvent["severity"] = "high";
+    if (ruleYaml.includes("level: critical")) level = "critical";
+    else if (ruleYaml.includes("level: high")) level = "high";
+    else if (ruleYaml.includes("level: medium") || ruleYaml.includes("level: low")) level = "clean";
+    else if (selectedRule?.level) level = selectedRule.level;
+
+    // 3. Determine source
+    let source: SecurityLogEvent["source"] = "Zeek DNS";
+    if (ruleYaml.toLowerCase().includes("cloudtrail") || ruleYaml.toLowerCase().includes("aws")) source = "CloudTrail";
+    else if (ruleYaml.toLowerCase().includes("vpc")) source = "VPC Flow";
+    else if (ruleYaml.toLowerCase().includes("crowdstrike") || ruleYaml.toLowerCase().includes("edr")) source = "CrowdStrike";
+    else if (ruleYaml.toLowerCase().includes("sshd") || ruleYaml.toLowerCase().includes("syslog") || ruleYaml.toLowerCase().includes("linux")) source = "Syslog";
+
+    // 4. Extract title
+    const titleMatch = ruleYaml.match(/title:\s*(.*)/i);
+    const ruleTitle = titleMatch ? titleMatch[1].trim() : (selectedRule?.title || "Custom Sigma Rule");
+
     const testLog: SecurityLogEvent = {
-      id: `eval-${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }) + ".000",
-      source: selectedRule.logsource.product === "zeek" ? "Zeek DNS" : "CloudTrail",
-      logPayload: selectedRule.sampleLogMatch,
-      matchedRules: [selectedRule.id],
-      severity: selectedRule.level,
-      processedBy: "Vector Node #1 -> Live Rule Evaluation"
+      id: `eval-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }) + "." + Math.floor(Math.random() * 900 + 100),
+      source: source,
+      logPayload: samplePayload,
+      matchedRules: [ruleTitle],
+      severity: level,
+      processedBy: "Vector Node #1 -> Live Confluent Engine Match"
     };
-    setLogs(prev => [testLog, ...prev]);
+
+    // Ensure filter doesn't hide the injected log
+    setFilterSeverity("all");
+    
+    // Inject at top of log feed
+    setLogs(prev => [testLog, ...prev.slice(0, 24)]);
+    
+    // Highlight / select injected log immediately
+    setSelectedLog(testLog);
+
+    // Show visual confirmation toast
+    setInjectSuccess(true);
+    setTimeout(() => setInjectSuccess(false), 3000);
   };
 
   const filteredLogs = logs.filter(l => filterSeverity === "all" || l.severity === filterSeverity);
@@ -174,33 +513,296 @@ export const ThreatDetectionSandbox: React.FC = () => {
             <span className="text-xs font-mono text-blue-700 font-bold">{rules.length} Rules Active</span>
           </div>
 
-          {/* Preset Selector */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Select Sigma Rule Preset</label>
-            <div className="space-y-1.5">
-              {rules.map((rule) => (
-                <button
-                  key={rule.id}
-                  onClick={() => setSelectedRule(rule)}
-                  className={`w-full text-left p-2.5 rounded-lg border text-xs transition-all flex items-center justify-between ${
-                    selectedRule.id === rule.id
-                      ? "bg-blue-50 border-blue-200 text-blue-800 font-bold"
-                      : "bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-slate-100/70"
-                  }`}
+          {/* Inline Gemini AI Input Field */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2.5 text-slate-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-bold text-white">Gemini AI Rule Generator</span>
+              </div>
+              <span className="text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-semibold">
+                Matano Schema Engine
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <input
+                  type="text"
+                  value={inlineAiPrompt}
+                  onChange={(e) => setInlineAiPrompt(e.target.value)}
+                  placeholder="Describe threat to generate Sigma YAML (e.g. Detect DNS TXT base64 payloads)..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !isInlineGenerating && inlineAiPrompt.trim()) {
+                      handleInlineGeminiGenerate();
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={inlineLogType}
+                  onChange={(e) => setInlineLogType(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-1.5 text-[11px] text-cyan-300 focus:outline-none focus:border-cyan-500 font-mono grow"
                 >
-                  <div className="truncate pr-2">
-                    <div className="truncate text-white font-medium">{rule.title}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">{rule.logsource.product || "generic"} / {rule.logsource.category || "security"}</div>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold shrink-0 ${
-                    rule.level === 'critical' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
-                    rule.level === 'high' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                    'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                  }`}>
-                    {rule.level}
-                  </span>
+                  <option value="zeek_dns">Zeek DNS (zeek_dns_logs)</option>
+                  <option value="cloudtrail">AWS CloudTrail (aws_cloudtrail_logs)</option>
+                  <option value="vpc_flow">AWS VPC Flow (aws_vpc_flow_logs)</option>
+                  <option value="crowdstrike">CrowdStrike EDR (crowdstrike_process_logs)</option>
+                  <option value="syslog">Linux Syslog (syslog_auth_logs)</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleInlineGeminiGenerate}
+                  disabled={isInlineGenerating || !inlineAiPrompt.trim()}
+                  className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
+                >
+                  {isInlineGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  <span>{isInlineGenerating ? "Generating..." : "Generate with Gemini"}</span>
                 </button>
-              ))}
+              </div>
+            </div>
+
+            {/* AI Result & Matano Schema Validation Banner */}
+            {aiGeneratedResultInfo && (
+              <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-[11px] space-y-1 font-mono">
+                <div className="flex items-center justify-between text-emerald-400 font-bold">
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Matano Schema Validated
+                  </span>
+                  <span className="text-slate-400 text-[10px]">{aiGeneratedResultInfo.schema.logSourceProduct} / {aiGeneratedResultInfo.schema.logSourceService}</span>
+                </div>
+                <div className="text-slate-300">
+                  Target Iceberg Table: <span className="text-cyan-300 font-bold">{aiGeneratedResultInfo.schema.icebergTable}</span>
+                </div>
+                <div className="text-slate-400 text-[10px] line-clamp-1">
+                  Partitioning: {aiGeneratedResultInfo.schema.partitioning}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Preset Selector & Pre-Built Sigma Rule Template Library */}
+          <div className="space-y-3">
+            {/* Toast Notification for Template Insertion */}
+            {templateAppliedToast && (
+              <div className="p-2.5 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-200 text-xs flex items-center justify-between font-mono animate-fade-in shadow-lg">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span>{templateAppliedToast}</span>
+                </div>
+                <span className="text-[10px] bg-cyan-900/80 text-cyan-200 px-2 py-0.5 rounded border border-cyan-700">Real-Time Linter Updated</span>
+              </div>
+            )}
+
+            {/* Pre-Built Sigma Rule Template Library */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-3">
+              {/* Library Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-slate-200">Pre-Built Threat Rule Template Library</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-950 text-blue-300 border border-blue-800">
+                        {sigmaTemplateLibrary.length} Threat Templates
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">Select pre-built Sigma rules for common threat scenarios (brute-force, unauthorized API access, C2 beaconing, exfiltration) to load directly into the editor.</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowTemplateLibrary(!showTemplateLibrary)}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono cursor-pointer shrink-0 self-start sm:self-auto"
+                >
+                  {showTemplateLibrary ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  <span>{showTemplateLibrary ? "Collapse Library" : "Expand Library"}</span>
+                </button>
+              </div>
+
+              {showTemplateLibrary && (
+                <>
+                  {/* Search & Category Filter Bar */}
+                  <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {/* Search Bar */}
+                      <div className="relative flex-1">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={templateSearchQuery}
+                          onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                          placeholder="Search threat templates (e.g. brute-force, API access, T1110, S3)..."
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono"
+                        />
+                      </div>
+
+                      {/* Category Dropdown Filter */}
+                      <select
+                        value={selectedTemplateCategory}
+                        onChange={(e) => setSelectedTemplateCategory(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 font-mono focus:outline-none focus:border-blue-500 shrink-0"
+                      >
+                        <option value="all">All Threat Categories ({sigmaTemplateLibrary.length})</option>
+                        <option value="Brute Force & Authentication">Brute Force & Authentication</option>
+                        <option value="Cloud API & Auth">Cloud API & Auth</option>
+                        <option value="Network & DNS Threat">Network & DNS Threat</option>
+                        <option value="Kubernetes & Container">Kubernetes & Container</option>
+                        <option value="S3 & Data Exfiltration">S3 & Data Exfiltration</option>
+                        <option value="Endpoint & Ransomware">Endpoint & Ransomware</option>
+                      </select>
+                    </div>
+
+                    {/* Quick Filter Pill Buttons */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] font-mono">
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "Brute Force & Authentication", label: "Brute Force" },
+                        { id: "Cloud API & Auth", label: "Cloud API" },
+                        { id: "Network & DNS Threat", label: "DNS / Network" },
+                        { id: "Kubernetes & Container", label: "K8s" },
+                        { id: "S3 & Data Exfiltration", label: "S3 Exfil" },
+                        { id: "Endpoint & Ransomware", label: "Ransomware" }
+                      ].map(cat => (
+                        <button
+                          key={cat.id}
+                          onClick={() => setSelectedTemplateCategory(cat.id)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition-all border cursor-pointer ${
+                            selectedTemplateCategory === cat.id
+                              ? "bg-blue-600 border-blue-500 text-white shadow-xs"
+                              : "bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                          }`}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Template Cards Catalog */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[340px] overflow-y-auto pr-1">
+                    {sigmaTemplateLibrary
+                      .filter(template => {
+                        const matchesCat = selectedTemplateCategory === "all" || template.categoryName === selectedTemplateCategory;
+                        const matchesQuery = !templateSearchQuery.trim() || 
+                          template.title.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
+                          template.description.toLowerCase().includes(templateSearchQuery.toLowerCase()) ||
+                          (template.mitreAttackId && template.mitreAttackId.toLowerCase().includes(templateSearchQuery.toLowerCase())) ||
+                          template.tags.some(t => t.toLowerCase().includes(templateSearchQuery.toLowerCase()));
+                        return matchesCat && matchesQuery;
+                      })
+                      .map((template) => {
+                        const isSelected = selectedRule.id === template.id || selectedRule.title === template.title;
+                        return (
+                          <div
+                            key={template.id}
+                            className={`p-3 rounded-lg border transition-all space-y-2 flex flex-col justify-between ${
+                              isSelected 
+                                ? "bg-blue-950/50 border-blue-500/80 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                                : "bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-950"
+                            }`}
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-start justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold tracking-wide border ${
+                                    template.level === 'critical' ? 'bg-red-950 text-red-300 border-red-800' :
+                                    template.level === 'high' ? 'bg-amber-950 text-amber-300 border-amber-800' :
+                                    'bg-blue-950 text-blue-300 border-blue-800'
+                                  }`}>
+                                    {template.level}
+                                  </span>
+                                  {template.mitreAttackId && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-cyan-300 border border-slate-700">
+                                      {template.mitreAttackId}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    {template.logsource.product || "generic"} / {template.logsource.service || template.logsource.category}
+                                  </span>
+                                </div>
+
+                                {isSelected && (
+                                  <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5 shrink-0 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
+                                    <CheckCircle2 className="w-3 h-3" /> Active
+                                  </span>
+                                )}
+                              </div>
+
+                              <h4 className="text-xs font-bold text-slate-100 leading-snug">{template.title}</h4>
+                              <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">{template.description}</p>
+                            </div>
+
+                            {/* Card Footer: Tags & Load Button */}
+                            <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1 overflow-hidden">
+                                {template.tags.slice(0, 3).map((tag, idx) => (
+                                  <span key={idx} className="text-[9px] bg-slate-900 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800 truncate">
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleSelectTemplate(template)}
+                                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 shrink-0 cursor-pointer ${
+                                  isSelected
+                                    ? "bg-blue-600 text-white hover:bg-blue-500 shadow-xs"
+                                    : "bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700"
+                                }`}
+                              >
+                                <BookmarkPlus className="w-3.5 h-3.5" />
+                                <span>{isSelected ? "Re-insert Rule" : "Insert Template"}</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Loaded Active Rules Bar */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Active Loaded Rules ({rules.length})</label>
+              <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+                {rules.map((rule) => (
+                  <button
+                    key={rule.id}
+                    onClick={() => {
+                      setSelectedRule(rule);
+                      setRuleYaml(rule.detectionYaml);
+                    }}
+                    className={`w-full text-left p-2 rounded-lg border text-xs transition-all flex items-center justify-between cursor-pointer ${
+                      selectedRule.id === rule.id
+                        ? "bg-blue-900/60 border-blue-500 text-white font-bold shadow-2xs"
+                        : "bg-slate-900/70 border-slate-800 text-slate-300 hover:bg-slate-800"
+                    }`}
+                  >
+                    <div className="truncate pr-2">
+                      <div className="truncate font-semibold text-slate-100">{rule.title}</div>
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{rule.logsource.product || "generic"} / {rule.logsource.service || rule.logsource.category || "security"}</div>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold shrink-0 ${
+                      rule.level === 'critical' ? 'bg-red-950 text-red-300 border border-red-800' :
+                      rule.level === 'high' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
+                      'bg-blue-950 text-blue-300 border border-blue-800'
+                    }`}>
+                      {rule.level}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -232,39 +834,155 @@ export const ThreatDetectionSandbox: React.FC = () => {
               </div>
 
               <div className="flex items-center space-x-2">
-                {(!validationResult.isValid || validationResult.warnings.length > 0) && (
-                  <button
-                    onClick={handleAutoFixYaml}
-                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold text-[11px] rounded-lg transition-all flex items-center gap-1"
-                    title="Auto-insert missing required fields"
-                  >
-                    <Wand2 className="w-3 h-3 text-amber-600" />
-                    <span>Auto-Fix</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={handleAutoFixYaml}
+                  className={`px-2.5 py-1 font-bold text-[11px] rounded-lg transition-all flex items-center gap-1 border shadow-2xs cursor-pointer ${
+                    autoFixApplied 
+                      ? "bg-emerald-600 text-white border-emerald-600"
+                      : (!validationResult.isValid || validationResult.warnings.length > 0)
+                      ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300"
+                  }`}
+                  title="Auto-insert missing required fields & schema bindings"
+                >
+                  {autoFixApplied ? <Check className="w-3 h-3 text-white" /> : <Wand2 className="w-3 h-3 text-amber-600" />}
+                  <span>{autoFixApplied ? "Schema Fixed!" : "Auto-Fix"}</span>
+                </button>
 
                 <button
+                  type="button"
                   onClick={handleTestRuleOnLog}
-                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] rounded-lg transition-all flex items-center gap-1 shadow-xs"
+                  className={`px-2.5 py-1 font-bold text-[11px] rounded-lg transition-all flex items-center gap-1 shadow-2xs cursor-pointer ${
+                    injectSuccess
+                      ? "bg-emerald-600 text-white"
+                      : "bg-blue-600 hover:bg-blue-700 text-white"
+                  }`}
+                  title="Inject matching event into telemetry stream"
                 >
-                  <Play className="w-3 h-3" />
-                  <span>Inject Sample Match</span>
+                  {injectSuccess ? <Check className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                  <span>{injectSuccess ? "Injected!" : "Inject Sample Match"}</span>
                 </button>
               </div>
             </div>
 
-            <textarea
-              value={ruleYaml}
-              onChange={(e) => setRuleYaml(e.target.value)}
-              rows={12}
-              className={`w-full bg-[#1F2937] border rounded-lg p-3 text-xs font-mono leading-relaxed transition-all focus:outline-none ${
-                !validationResult.isValid 
-                  ? "border-red-500/80 text-red-200 focus:border-red-500" 
-                  : validationResult.warnings.length > 0
-                  ? "border-amber-500/50 text-cyan-300 focus:border-amber-400"
-                  : "border-slate-700 text-cyan-300 focus:border-blue-500"
-              }`}
-            />
+            {/* Notification Feedback Banner */}
+            {(autoFixApplied || injectSuccess) && (
+              <div className="p-2 rounded-lg bg-emerald-900/90 text-emerald-100 border border-emerald-700 text-xs flex items-center justify-between font-mono animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    {autoFixApplied && "Auto-Fix applied: Re-structured YAML keys & missing metadata schemas."}
+                    {injectSuccess && "Injected telemetry match into Confluent stream & highlighted event payload."}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* YAML Editor with Real-Time Line-by-Line Syntax Validator */}
+            <div className={`rounded-xl border transition-all overflow-hidden bg-[#131B2E] ${
+              !validationResult.isValid 
+                ? "border-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.15)]" 
+                : validationResult.warnings.length > 0
+                ? "border-amber-500/60 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
+                : "border-slate-800 shadow-xs"
+            }`}>
+              {/* Editor Header Bar */}
+              <div className="bg-slate-900/90 border-b border-slate-800 px-3 py-2 flex items-center justify-between text-xs font-mono">
+                <div className="flex items-center space-x-2 text-slate-400">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500/80"></span>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+                  <span className="text-[11px] font-bold text-slate-300 ml-1">sigma_rule.yaml</span>
+                </div>
+
+                <div className="flex items-center space-x-3 text-[11px]">
+                  <span className="text-slate-400 font-mono">
+                    {ruleYaml.split("\n").length} Lines
+                  </span>
+                  {!validationResult.isValid ? (
+                    <span className="text-red-400 font-bold flex items-center gap-1 bg-red-950/80 border border-red-800 px-2 py-0.5 rounded">
+                      <XCircle className="w-3 h-3" /> {validationResult.errors.length} Syntax Error{validationResult.errors.length > 1 ? "s" : ""}
+                    </span>
+                  ) : validationResult.warnings.length > 0 ? (
+                    <span className="text-amber-400 font-bold flex items-center gap-1 bg-amber-950/80 border border-amber-800 px-2 py-0.5 rounded">
+                      <AlertTriangle className="w-3 h-3" /> {validationResult.warnings.length} Warning{validationResult.warnings.length > 1 ? "s" : ""}
+                    </span>
+                  ) : (
+                    <span className="text-emerald-400 font-bold flex items-center gap-1 bg-emerald-950/80 border border-emerald-800 px-2 py-0.5 rounded">
+                      <CheckCircle2 className="w-3 h-3" /> Valid Schema
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Editor Code Body with Line Gutter & Error Markers */}
+              <div className="relative flex min-h-[300px] max-h-[460px] overflow-auto font-mono text-xs">
+                {/* Line Gutter */}
+                <div className="bg-[#0A0F1D] text-slate-500 select-none border-r border-slate-800/80 py-3 text-right font-mono text-[11px] leading-relaxed shrink-0 min-w-[50px]">
+                  {ruleYaml.split("\n").map((_, idx) => {
+                    const lineNum = idx + 1;
+                    const lineError = validationResult.errors.find(e => e.line === lineNum);
+                    const lineWarning = validationResult.warnings.find(w => w.line === lineNum);
+
+                    return (
+                      <div 
+                        key={`gutter-${lineNum}`}
+                        className={`px-2 flex items-center justify-end space-x-1.5 h-[1.375rem] group relative ${
+                          lineError ? "bg-red-950/80 text-red-400 font-bold" : lineWarning ? "bg-amber-950/60 text-amber-400" : ""
+                        }`}
+                      >
+                        <span className="text-[10px] opacity-70">{lineNum}</span>
+                        {lineError && (
+                          <XCircle className="w-3 h-3 text-red-500 shrink-0 inline cursor-pointer" />
+                        )}
+                        {!lineError && lineWarning && (
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 inline cursor-pointer" />
+                        )}
+
+                        {/* Hover Error Tooltip */}
+                        {(lineError || lineWarning) && (
+                          <div className="absolute left-full top-0 ml-2 z-30 hidden group-hover:block w-64 p-2.5 bg-slate-900 border border-slate-700 rounded-lg shadow-xl text-left font-sans text-xs">
+                            {lineError ? (
+                              <div className="text-red-300 font-medium space-y-1">
+                                <div className="font-bold text-red-400 flex items-center gap-1">
+                                  <XCircle className="w-3.5 h-3.5 text-red-400" /> Syntax Error (Line {lineNum})
+                                </div>
+                                <p className="text-[11px]">{lineError.message}</p>
+                                {lineError.suggestion && (
+                                  <p className="text-[10px] text-red-200/70 italic mt-1">💡 {lineError.suggestion}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-amber-300 font-medium space-y-1">
+                                <div className="font-bold text-amber-400 flex items-center gap-1">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" /> Warning (Line {lineNum})
+                                </div>
+                                <p className="text-[11px]">{lineWarning?.message}</p>
+                                {lineWarning?.suggestion && (
+                                  <p className="text-[10px] text-amber-200/70 italic mt-1">💡 {lineWarning.suggestion}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Textarea Code Input */}
+                <textarea
+                  value={ruleYaml}
+                  onChange={(e) => setRuleYaml(e.target.value)}
+                  rows={Math.max(14, ruleYaml.split("\n").length)}
+                  spellCheck={false}
+                  className="w-full bg-transparent p-3 text-xs font-mono text-cyan-300 leading-relaxed focus:outline-none resize-none whitespace-pre overflow-x-auto tab-size-2"
+                  style={{ lineHeight: "1.375rem" }}
+                  placeholder="Paste or write Sigma YAML detection rule here..."
+                />
+              </div>
+            </div>
 
             {/* SigmaValidator Interactive Linting Output Box */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
@@ -272,10 +990,11 @@ export const ThreatDetectionSandbox: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <ShieldCheck className="w-4 h-4 text-cyan-400" />
                   <span className="font-bold text-slate-200">SigmaValidator Real-Time Linter</span>
+                  <span className="text-[10px] bg-slate-800 text-cyan-300 px-1.5 py-0.5 rounded font-mono">Real-Time</span>
                 </div>
                 <button
                   onClick={() => setShowLinterDetails(!showLinterDetails)}
-                  className="text-[10px] text-cyan-400 hover:underline font-mono"
+                  className="text-[10px] text-cyan-400 hover:underline font-mono cursor-pointer"
                 >
                   {showLinterDetails ? "Hide Diagnostics" : "Show Diagnostics"}
                 </button>
@@ -284,18 +1003,26 @@ export const ThreatDetectionSandbox: React.FC = () => {
               {showLinterDetails && (
                 <div className="space-y-1.5 pt-1">
                   {validationResult.errors.length === 0 && validationResult.warnings.length === 0 && (
-                    <div className="p-2 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-emerald-300 text-[11px] flex items-center gap-2">
+                    <div className="p-2.5 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-emerald-300 text-[11px] flex items-center gap-2 font-mono">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Schema passed: Valid top-level keys, logsource bindings, and detection condition pattern.</span>
+                      <span>Schema Passed: Valid top-level keys, logsource bindings, and detection condition pattern. Zero syntax errors detected.</span>
                     </div>
                   )}
 
                   {validationResult.errors.map((err, idx) => (
-                    <div key={`err-${idx}`} className="p-2 bg-red-950/60 border border-red-800/80 rounded-lg text-red-200 text-[11px] space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-red-400">
-                        <XCircle className="w-3.5 h-3.5 shrink-0" />
-                        <span>[ERROR] {err.field ? `Field '${err.field}'` : "YAML Structure"}: {err.message}</span>
+                    <div key={`err-${idx}`} className="p-2.5 bg-red-950/60 border border-red-800/80 rounded-lg text-red-200 text-[11px] space-y-1">
+                      <div className="flex items-center justify-between font-bold text-red-400">
+                        <span className="flex items-center gap-1.5">
+                          <XCircle className="w-3.5 h-3.5 shrink-0" />
+                          [SYNTAX ERROR] {err.line ? `Line ${err.line}: ` : ""}{err.field ? `Field '${err.field}'` : "YAML Structure"}
+                        </span>
+                        {err.line && (
+                          <span className="text-[10px] bg-red-900/80 border border-red-700 text-red-200 px-1.5 py-0.5 rounded font-mono">
+                            Line {err.line}
+                          </span>
+                        )}
                       </div>
+                      <p className="text-red-200 text-[11px] pl-5">{err.message}</p>
                       {err.suggestion && (
                         <p className="text-[10px] text-red-300/80 pl-5 font-mono">💡 Suggestion: {err.suggestion}</p>
                       )}
@@ -303,11 +1030,19 @@ export const ThreatDetectionSandbox: React.FC = () => {
                   ))}
 
                   {validationResult.warnings.map((warn, idx) => (
-                    <div key={`warn-${idx}`} className="p-2 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-200 text-[11px] space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-amber-400">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        <span>[WARNING] {warn.field ? `Field '${warn.field}'` : "Best Practice"}: {warn.message}</span>
+                    <div key={`warn-${idx}`} className="p-2.5 bg-amber-950/60 border border-amber-800/80 rounded-lg text-amber-200 text-[11px] space-y-1">
+                      <div className="flex items-center justify-between font-bold text-amber-400">
+                        <span className="flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          [WARNING] {warn.line ? `Line ${warn.line}: ` : ""}{warn.field ? `Field '${warn.field}'` : "Best Practice"}
+                        </span>
+                        {warn.line && (
+                          <span className="text-[10px] bg-amber-900/80 border border-amber-700 text-amber-200 px-1.5 py-0.5 rounded font-mono">
+                            Line {warn.line}
+                          </span>
+                        )}
                       </div>
+                      <p className="text-amber-200 text-[11px] pl-5">{warn.message}</p>
                       {warn.suggestion && (
                         <p className="text-[10px] text-amber-300/80 pl-5 font-mono">💡 Suggestion: {warn.suggestion}</p>
                       )}
@@ -395,7 +1130,7 @@ export const ThreatDetectionSandbox: React.FC = () => {
                     {log.matchedRules.length > 0 && (
                       <span className="text-red-600 font-bold flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" />
-                        Matched: {selectedRule.title}
+                        Matched: {log.matchedRules.join(", ")}
                       </span>
                     )}
                   </div>

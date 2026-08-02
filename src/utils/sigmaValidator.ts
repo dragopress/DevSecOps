@@ -30,14 +30,16 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
   const warnings: SigmaValidationIssue[] = [];
   
   const lines = yamlContent.split("\n");
-  const parsedMap: Record<string, string | Record<string, string>> = {};
   const parsedRule: SigmaValidationResult["parsedRule"] = {
     logsource: {},
     detectionKeys: []
   };
 
   let currentSection = "";
+  let currentSectionLine = 1;
   let detectionKeysFound: string[] = [];
+  const sectionLineNumbers: Record<string, number> = {};
+  const topLevelKeysSeen = new Set<string>();
 
   // Basic YAML Parser & Syntax Checker
   lines.forEach((rawLine, index) => {
@@ -47,15 +49,73 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     // Skip empty or comment lines
     if (!line || line.startsWith("#")) return;
 
-    // Check syntax line formatting (key: value or section header)
+    // 1. Check for TAB indentation
+    if (rawLine.startsWith("\t") || rawLine.includes(":\t") || (rawLine.includes("\t") && !rawLine.includes('"') && !rawLine.includes("'"))) {
+      warnings.push({
+        type: "warning",
+        line: lineNum,
+        message: `Line ${lineNum}: Tab character detected in indentation. YAML requires spaces.`,
+        suggestion: "Replace tabs with 2 spaces for standard YAML compatibility."
+      });
+    }
+
+    // 2. Check for quote mismatches
+    const doubleQuotes = (rawLine.match(/"/g) || []).length;
+    const singleQuotes = (rawLine.match(/'/g) || []).length;
+    if (doubleQuotes % 2 !== 0) {
+      errors.push({
+        type: "error",
+        line: lineNum,
+        message: `Syntax error on line ${lineNum}: Unclosed double quote (") detected.`,
+        suggestion: "Ensure every opening double quote has a matching closing quote."
+      });
+    }
+    if (singleQuotes % 2 !== 0) {
+      errors.push({
+        type: "error",
+        line: lineNum,
+        message: `Syntax error on line ${lineNum}: Unclosed single quote (') detected.`,
+        suggestion: "Ensure every opening single quote has a matching closing quote."
+      });
+    }
+
+    // 3. Check for bracket mismatches [ ] and { }
+    const openSquare = (rawLine.match(/\[/g) || []).length;
+    const closeSquare = (rawLine.match(/\]/g) || []).length;
+    if (openSquare !== closeSquare) {
+      errors.push({
+        type: "error",
+        line: lineNum,
+        message: `Syntax error on line ${lineNum}: Unbalanced square brackets [ ].`,
+        suggestion: "Check list bracket syntax (e.g., ['item1', 'item2'])."
+      });
+    }
+
+    // 4. Check syntax line formatting (key: value or section header or list item)
     if (!line.includes(":") && !line.startsWith("-")) {
       errors.push({
         type: "error",
         line: lineNum,
-        message: `Syntax error: Line ${lineNum} does not appear to be a valid key:value pair or list item.`,
-        suggestion: "Ensure syntax uses 'key: value' or '- item' format."
+        message: `Syntax error: Line ${lineNum} ('${line.substring(0, 30)}') is not a valid key: value pair or list item.`,
+        suggestion: "Format as 'key: value' or '- item'."
       });
       return;
+    }
+
+    // Check for key without space after colon (e.g. key:value instead of key: value) unless inside URL or quotes
+    if (line.includes(":") && !line.startsWith("-")) {
+      const colonIndex = line.indexOf(":");
+      const afterColon = line.substring(colonIndex + 1);
+      const keyPart = line.substring(0, colonIndex).trim();
+      
+      if (afterColon.length > 0 && !afterColon.startsWith(" ") && !afterColon.startsWith("/") && !afterColon.startsWith('"') && !afterColon.startsWith("'")) {
+        warnings.push({
+          type: "warning",
+          line: lineNum,
+          message: `Style warning on line ${lineNum}: Missing space after colon in '${keyPart}:'.`,
+          suggestion: "Use 'key: value' with a space after the colon."
+        });
+      }
     }
 
     // Top-level section detector (non-indented key)
@@ -64,7 +124,19 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
       const key = parts[0].trim();
       const val = parts.slice(1).join(":").trim();
 
+      if (topLevelKeysSeen.has(key) && key !== "falsepositives") {
+        errors.push({
+          type: "error",
+          line: lineNum,
+          message: `Duplicate top-level section '${key}' detected on line ${lineNum}.`,
+          suggestion: `Combine '${key}' content into a single section.`
+        });
+      }
+      topLevelKeysSeen.add(key);
+
       currentSection = key;
+      currentSectionLine = lineNum;
+      sectionLineNumbers[key] = lineNum;
 
       if (key === "title") {
         parsedRule.title = val.replace(/^["']|["']$/g, "");
@@ -77,7 +149,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
       } else if (key === "level") {
         parsedRule.level = val.replace(/^["']|["']$/g, "");
       }
-    } else if ((rawLine.startsWith("  ") || rawLine.startsWith("\t")) && line.includes(":")) {
+    } else if ((rawLine.startsWith("  ") || rawLine.startsWith(" ") || rawLine.startsWith("\t")) && line.includes(":")) {
       // Sub-key under a section
       const parts = line.split(":");
       const subKey = parts[0].trim();
@@ -85,11 +157,14 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
 
       if (currentSection === "logsource" && parsedRule.logsource) {
         parsedRule.logsource[subKey] = subVal.replace(/^["']|["']$/g, "");
+        sectionLineNumbers[`logsource.${subKey}`] = lineNum;
       } else if (currentSection === "detection") {
         if (subKey === "condition") {
           parsedRule.condition = subVal.replace(/^["']|["']$/g, "");
+          sectionLineNumbers["condition"] = lineNum;
         } else {
           detectionKeysFound.push(subKey);
+          sectionLineNumbers[`detection.${subKey}`] = lineNum;
         }
       }
     }
@@ -102,13 +177,15 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     errors.push({
       type: "error",
       field: "title",
+      line: sectionLineNumbers["title"] || 1,
       message: "Missing required top-level key 'title'.",
-      suggestion: "Add 'title: Describing the threat pattern'"
+      suggestion: "Add 'title: Describing the threat pattern' at top of YAML."
     });
   } else if (parsedRule.title.length < 5) {
     warnings.push({
       type: "warning",
       field: "title",
+      line: sectionLineNumbers["title"] || 1,
       message: "Rule title is very short.",
       suggestion: "Provide a clear, descriptive title for SIEM alerts."
     });
@@ -119,6 +196,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     warnings.push({
       type: "warning",
       field: "id",
+      line: sectionLineNumbers["id"] || 2,
       message: "Missing 'id' field (UUIDv4).",
       suggestion: "Generating a unique UUIDv4 is recommended for tracking Sigma rule revisions."
     });
@@ -130,6 +208,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     warnings.push({
       type: "warning",
       field: "status",
+      line: sectionLineNumbers["status"] || 3,
       message: "Missing 'status' key.",
       suggestion: "Set 'status: production' or 'status: test'."
     });
@@ -137,6 +216,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     warnings.push({
       type: "warning",
       field: "status",
+      line: sectionLineNumbers["status"] || 3,
       message: `Non-standard status '${parsedRule.status}'.`,
       suggestion: `Use one of: ${validStatuses.join(", ")}`
     });
@@ -147,6 +227,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     errors.push({
       type: "error",
       field: "logsource",
+      line: 5,
       message: "Missing required section 'logsource:'.",
       suggestion: "Add a 'logsource' block specifying product, category, or service."
     });
@@ -159,6 +240,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
       warnings.push({
         type: "warning",
         field: "logsource",
+        line: sectionLineNumbers["logsource"] || 6,
         message: "'logsource' block lacks 'category', 'product', or 'service'.",
         suggestion: "Specify 'product: zeek' or 'category: dns' for accurate router targeting."
       });
@@ -170,6 +252,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     errors.push({
       type: "error",
       field: "detection",
+      line: 10,
       message: "Missing required section 'detection:'.",
       suggestion: "Add a 'detection:' section with selection patterns and a 'condition'."
     });
@@ -178,6 +261,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
       errors.push({
         type: "error",
         field: "detection.condition",
+        line: sectionLineNumbers["detection"] || 11,
         message: "Missing 'condition' within 'detection' block.",
         suggestion: "Add 'condition: selection' or 'condition: selection | count() > 5 by src_ip'."
       });
@@ -188,7 +272,8 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
           warnings.push({
             type: "warning",
             field: "detection",
-            message: `Detection block defines selection key '${key}', but it is not explicitly referenced in condition '${parsedRule.condition}'.`,
+            line: sectionLineNumbers[`detection.${key}`] || sectionLineNumbers["condition"] || 12,
+            message: `Selection key '${key}' defined, but not explicitly referenced in condition '${parsedRule.condition}'.`,
             suggestion: `Update condition to include '${key}' or remove unused selection.`
           });
         }
@@ -199,6 +284,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
       errors.push({
         type: "error",
         field: "detection",
+        line: sectionLineNumbers["detection"] || 10,
         message: "'detection' block has no defined selections or keywords.",
         suggestion: "Add at least one selection pattern like 'selection:' or 'keywords:'."
       });
@@ -211,6 +297,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     warnings.push({
       type: "warning",
       field: "level",
+      line: sectionLineNumbers["level"] || lines.length,
       message: "Missing 'level' severity field.",
       suggestion: "Specify 'level: high' or 'level: critical' for SIEM routing."
     });
@@ -218,6 +305,7 @@ export function validateSigmaYaml(yamlContent: string): SigmaValidationResult {
     warnings.push({
       type: "warning",
       field: "level",
+      line: sectionLineNumbers["level"] || lines.length,
       message: `Unknown severity level '${parsedRule.level}'.`,
       suggestion: `Valid levels are: ${validLevels.join(", ")}`
     });

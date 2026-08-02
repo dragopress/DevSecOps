@@ -3,6 +3,67 @@ import { TerraformFile, CustomVariables } from "../types";
 export function getTerraformFiles(vars: CustomVariables): TerraformFile[] {
   return [
     {
+      path: "buildspec.yml",
+      name: "buildspec.yml",
+      language: "yaml",
+      description: "AWS CodeBuild DevSecOps build specification executing Checkov & tfsec static security gates before Terraform apply.",
+      content: `version: 0.2
+
+env:
+  variables:
+    TF_VERSION: "1.6.6"
+    CHECKOV_VERSION: "3.2.0"
+    ENVIRONMENT: "${vars.environment}"
+    AWS_REGION: "${vars.awsRegion}"
+  parameter-store:
+    KMS_KEY_ARN: "/secops/${vars.environment}/kms_key_arn"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "[INFO] Installing HashiCorp Terraform \${TF_VERSION}..."
+      - wget -q https://releases.hashicorp.com/terraform/\${TF_VERSION}/terraform_\${TF_VERSION}_linux_amd64.zip
+      - unzip -q terraform_\${TF_VERSION}_linux_amd64.zip -d /usr/local/bin/
+      - echo "[INFO] Installing Checkov Static Analysis Scanner..."
+      - pip3 install --quiet checkov==\${CHECKOV_VERSION} tfsec
+
+  pre_build:
+    commands:
+      - echo "[INFO] Phase 1: Validating HCL Formatting..."
+      - terraform fmt -check -recursive
+      - echo "[INFO] Phase 2: Executing Checkov Static Security Analysis..."
+      - checkov -d . --framework terraform --compact --quiet --output cli
+      - echo "[INFO] Phase 3: Executing tfsec Security Analysis..."
+      - tfsec .
+
+  build:
+    commands:
+      - echo "[INFO] Phase 4: Initializing S3 Remote State & DynamoDB Locks..."
+      - terraform init -backend-config="bucket=tf-state-${vars.projectName}-${vars.environment}-${vars.awsRegion}"
+      - echo "[INFO] Phase 5: Validating Terraform Syntactical Structure..."
+      - terraform validate
+      - echo "[INFO] Phase 6: Generating Terraform Spec Diff Plan..."
+      - terraform plan -out=tfplan -no-color
+
+  post_build:
+    commands:
+      - echo "[INFO] Phase 7: Evaluating Auto-Apply Conditions..."
+      - |
+        if [ "$CODEBUILD_BUILD_SUCCEEDED" = "1" ] && [ "$EXECUTE_APPLY" = "true" ]; then
+          echo "[SUCCESS] Auto-applying Terraform changes to AWS Environment..."
+          terraform apply -auto-approve tfplan
+        else
+          echo "[INFO] Plan completed. Manual approval gate required before apply."
+        fi
+
+artifacts:
+  files:
+    - tfplan
+    - checkov_report.json`
+    },
+    {
       path: "providers.tf",
       name: "providers.tf",
       language: "hcl",
@@ -222,62 +283,6 @@ output "vector_sigma_rules_iam_policy_arn" {
   description = "IAM Policy ARN granting EKS Vector IRSA role read access to S3 Sigma rules"
   value       = module.sigma_rules.vector_iam_policy_arn
 }`
-    },
-    {
-      path: "buildspec.yml",
-      name: "buildspec.yml",
-      language: "yaml",
-      description: "AWS CodeBuild spec executing Checkov static security analysis, terraform validate/fmt/plan/apply.",
-      content: `version: 0.2
-
-env:
-  variables:
-    TF_VERSION: "1.6.6"
-    CHECKOV_VERSION: "3.2.0"
-
-phases:
-  install:
-    runtime-versions:
-      python: 3.11
-    commands:
-      - echo "Installing Terraform \${TF_VERSION}..."
-      - wget -q https://releases.hashicorp.com/terraform/\${TF_VERSION}/terraform_\${TF_VERSION}_linux_amd64.zip
-      - unzip terraform_\${TF_VERSION}_linux_amd64.zip && mv terraform /usr/local/bin/
-      - echo "Installing Checkov Security Scanner..."
-      - pip install checkov==\${CHECKOV_VERSION}
-
-  pre_build:
-    commands:
-      - echo "Checking Terraform Formatting..."
-      - terraform fmt -check -recursive
-      - echo "Running Static Infrastructure Security Analysis (Checkov)..."
-      - checkov --directory . --framework terraform --skip-download --soft-fail-on HIGH --hard-fail-on CRITICAL
-
-  build:
-    commands:
-      - echo "Initializing Terraform..."
-      - terraform init
-      - echo "Validating Terraform Syntax..."
-      - terraform validate
-      - echo "Creating Infrastructure Plan..."
-      - terraform plan -out=tfplan -no-color
-
-  post_build:
-    commands:
-      - echo "Checking build outcome..."
-      - |
-        if [ "$CODEBUILD_BUILD_SUCCEEDED" -eq 1 ] && [ "$EXECUTE_APPLY" = "true" ]; then
-          echo "Applying Terraform Changes..."
-          terraform apply -auto-approve tfplan
-        else
-          echo "Terraform plan phase complete. Pending manual approval or skipped auto-apply."
-        fi
-
-artifacts:
-  files:
-    - tfplan
-    - "**/*"
-  name: secops-terraform-pipeline-artifacts`
     },
     {
       path: "modules/networking/main.tf",
