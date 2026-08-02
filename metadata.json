@@ -1,0 +1,6 @@
+{
+  "name": "DevSecOps Cloud Security Data Pipeline Studio",
+  "description": "Architect, simulate, scan, and deploy a hybrid cybersecurity data pipeline with Amazon MSK, EKS Vector, Sigma rules, and Matano S3 Iceberg data lake.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
