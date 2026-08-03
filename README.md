@@ -4,9 +4,10 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.2-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.2-61dafb.svg)](https://react.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4-38bdf8.svg)](https://tailwindcss.com/)
+[![Express](https://img.shields.io/badge/Express-4.18-000000.svg)](https://expressjs.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An enterprise-grade, multi-pillar SaaS control plane and microservice operational platform simulating mission-critical enterprise workflows across ERP/SCM/HCM, FinTech & Banking, MarTech & Commerce, Workspace & Low-Code, Cybersecurity & Endpoint Operations, DevOps & Intelligent Operations (AIOps), and Enterprise DataConnect Columnar Analytics.
+An enterprise-grade, multi-pillar SaaS control plane and microservice operational platform simulating mission-critical enterprise workflows across **ERP/SCM/HCM Core**, **FinTech & Core Banking**, **MarTech & Commerce**, **Workspace & Low-Code**, **Cybersecurity & Endpoint Operations**, **DevOps & Intelligent Operations (AIOps)**, and **Enterprise DataConnect Columnar Analytics**.
 
 ---
 
@@ -46,40 +47,40 @@ An enterprise-grade, multi-pillar SaaS control plane and microservice operationa
 
 ---
 
-## 🚀 Key Modules & Functional Architecture
+## 🚀 Key Pillar Modules & Deep Capabilities
 
 ### 🏢 1. Core Enterprise SaaS Control Plane
-* **Multi-Tenant Engine**: Organization switcher supporting tenant isolation (`tenant_id`), custom branding, domain binding, and resource usage metering (CPU, Storage, API Quota).
-* **Enterprise Modules Integrated**:
-  1. **ERP, SCM & HCM**: General Ledger sync, double-entry bookkeeping, purchase order tracking, inventory forecasting, and payroll management.
-  2. **FinTech & Core Banking Operations**: Double-entry ledger engine, ISO 20022 / SWIFT wire transaction validation, real-time fraud scoring, and PSD2/3 Open Banking API gateways.
-  3. **MarTech & Commerce Ecosystem**: Unified Customer Data Platform (CDP) identity resolution, multi-channel campaign orchestration (Email, SMS, Push), headless B2B/B2C commerce, and dynamic pricing engines.
+* **Multi-Tenant Isolation**: Global organization switcher with mandatory `tenant_id` scoping, custom branding, vanity domains, and real-time compute/storage quota enforcement.
+* **Integrated Core Solutions**:
+  * **ERP, SCM & HCM**: General Ledger sync, multi-currency double-entry journal entries, procurement purchase orders, demand forecasting, and automated payroll engine.
+  * **FinTech & Core Banking**: SWIFT / ISO 20022 wire validation, double-entry account ledger, real-time ML fraud scoring engine, and PSD2/3 Open Banking sandbox API gateways.
+  * **MarTech & Commerce**: Unified Customer Data Platform (CDP) identity graph, multi-channel automated campaign triggers (SMS, Email, Push), headless B2B/B2C store checkout, and dynamic pricing rules.
 
-### 🎨 2. Workspace & Low-Code Platform
-* **Collaborative Workspace & Digital Canvas**: Real-time canvas with shape manipulation, document commenting, and team active presence indicator.
-* **Drag-and-Drop Low-Code App Builder**: Visual WYSIWYG component builder (Forms, Tables, Charts, Buttons), state variable bindings, and 1-click publishing.
-* **Document Management & E-Signature Engine**: Cryptographic hash signing, multi-signatory approval workflows, and immutable audit trailing.
+### 🎨 2. Workspace & Low-Code Platform (`workspace-lowcode-service`)
+* **Real-time Collaborative Canvas**: Vector canvas supporting shape creation, multi-user comments, active presence avatars, and live layout grids.
+* **Drag-and-Drop Low-Code App Builder**: Visual WYSIWYG builder with pre-built form controls, data tables, and interactive event triggers.
+* **E-Signature & Document Lifecycle**: SHA-256 cryptographic document hash verification, multi-stage approval sequences, and immutable audit logs.
 
-### 🛡️ 3. Cybersecurity & Endpoint Operations
-* **Application Security Scanner (SAST & SCA)**: Multi-language code vulnerability scanner detecting OWASP Top 10 risks, secret leaks, and out-of-date dependencies (CVE catalog).
-* **Unified Endpoint Management (UEM) Agent**: Remote heartbeat telemetry receiver monitoring macOS, Windows, and Linux endpoint health, disk encryption (FileVault/BitLocker), and OPA policy status.
-* **Automated Patch Management & OS Auto-Remediation**: CVE vulnerability-to-patch mapping engine with automated queue execution for Linux `apt`/`yum` and Windows updates.
+### 🛡️ 3. Cybersecurity & Endpoint Operations (`cybersecurity-endpoint-ops-service`)
+* **Application Security Scanner (SAST & SCA)**: Automated source code parser searching for secret leaks, OWASP Top 10 vulnerabilities, and dependency CVE compliance.
+* **Unified Endpoint Management (UEM) Agent**: Remote heartbeat telemetry collector for macOS, Windows, and Linux endpoints tracking disk encryption (FileVault/BitLocker), EDR status, and OPA compliance.
+* **Patch Management & OS Auto-Remediation**: Vulnerability-to-patch mapping queue executing automated script rollouts for `apt`/`yum`/Windows Update packages.
 
 ### ⚙️ 4. DevOps & Intelligent Operations (AIOps - Inspired by HWA & AI Force)
-* **Enterprise Workload Scheduler**: Event-driven job orchestration engine supporting Cron expressions, Webhook events, and DAG dependencies with SLA monitoring and exponential backoff auto-retry queues.
-* **Continuous Deployment (CD) Pipeline**: Multi-environment deployment controller (Dev, Staging, Production Air-Gapped), ConfigMap manager, one-click release approval signoffs, and automated rollback hooks.
-* **Agentic AI Operations Engine (AI Force)**: Gemini LLM integration for automated incident log root-cause diagnosis, self-healing bash/kubectl script generation, and natural language helpdesk querying.
+* **Enterprise Workload Scheduler**: Event-driven job orchestrator supporting Cron expressions, Webhook triggers, and DAG dependencies with strict SLA monitoring and exponential backoff auto-retry queues.
+* **Continuous Deployment (CD) Pipeline**: Multi-cluster CD engine (Dev, Staging, Production Air-Gapped) with ConfigMap management, dual-signoff release approvals, and one-click rollback hooks.
+* **Agentic AI Operations Engine (AI Force)**: Gemini LLM integration for automated incident log root-cause analysis, self-healing bash/kubectl script generation, and natural language helpdesk querying.
 
 ### 📊 5. Enterprise Data & Analytics (Inspired by Actian Data Platform)
-* **DataConnect Low-Code Pipeline Builder**: Visual ETL/ELT pipeline builder connecting legacy ERP/CRMs to columnar warehouses, database schema extractor, and PII masking (SHA-256 Hash, Anonymization).
-* **SIMD Columnar Query Engine**: Memory-aligned columnar storage abstractions accelerated with AVX-512 SIMD vectorization for sub-15ms aggregations over 100M+ records.
-* **Customizable BI Dashboard**: Interactive reporting canvas with configurable KPI metric cards, bar distribution charts, and real-time refresh triggers.
+* **DataConnect Low-Code Pipeline Builder**: Visual ETL/ELT pipeline builder extracting schemas from ERPs/CRMs, transforming fields, and applying PII masking (SHA-256 Hash, Anonymization).
+* **SIMD Columnar Query Engine**: Memory-aligned columnar database abstractions utilizing AVX-512 SIMD vector registers for sub-15ms aggregations over 100M+ records.
+* **Customizable BI Reporting Dashboard**: Interactive BI canvas with customizable KPI metric cards, bar distribution charts, and live stream refresh triggers.
 
 ---
 
 ## 📦 Isolated Microservices & Repositories
 
-Each module is designed as an isolated microservice repository complete with its own multi-stage Dockerfile, gRPC/Protobuf contract, GraphQL schema, and PostgreSQL database structure:
+Each module is structured as an isolated microservice repository featuring its own multi-stage Dockerfile, gRPC/Protobuf contract, GraphQL schema, and PostgreSQL database structure:
 
 | Service ID | Repository Name | Port | Tech Stack | Primary Database |
 | :--- | :--- | :--- | :--- | :--- |
@@ -113,6 +114,7 @@ Copy `.env.example` to create `.env`:
 ```bash
 cp .env.example .env
 ```
+
 *(Optional)* Set `GEMINI_API_KEY` in `.env` to power the AI Architect and Agentic AIOps Log Diagnostic Engine:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -137,4 +139,5 @@ npm run build
 
 ## 📄 License
 This platform is open-source under the [MIT License](LICENSE).
+
 
