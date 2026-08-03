@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package devsecops.aiarchitect.v1;
+
+option go_package = "github.com/secops/ai-architect-service/gen/v1;aiarchitectv1";
+
+service AiArchitectService {
+  rpc AnalyzePosture (PostureRequest) returns (PostureResponse);
+  rpc SynthesizeSigmaRule (SynthesizeRuleRequest) returns (SynthesizeRuleResponse);
+}
+
+message PostureRequest {
+  string prompt = 1;
+  map<string, string> architecture_variables = 2;
+}
+
+message PostureResponse {
+  string analysis_text = 1;
+  repeated string priority_remediations = 2;
+  double overall_risk_score = 3;
+}
+
+message SynthesizeRuleRequest {
+  string attack_scenario = 1;
+  string log_source = 2;
+  string level = 3;
+}
+
+message SynthesizeRuleResponse {
+  string generated_sigma_yaml = 1;
+  string title = 2;
+  string mitre_attack_id = 3;
+}

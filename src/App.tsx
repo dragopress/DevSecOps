@@ -7,6 +7,14 @@ import { TerraformInspector } from "./components/TerraformInspector";
 import { ThreatDetectionSandbox } from "./components/ThreatDetectionSandbox";
 import { DataLakeWorkbench } from "./components/DataLakeWorkbench";
 import { CiCdScanner } from "./components/CiCdScanner";
+import { ServicesExplorer } from "./components/ServicesExplorer";
+import { EnterpriseSaaSControlPlane } from "./components/EnterpriseSaaSControlPlane";
+import { MartechCommerceModule } from "./components/MartechCommerceModule";
+import { WorkspaceLowCodeModule } from "./components/WorkspaceLowCodeModule";
+import { CybersecurityEndpointModule } from "./components/CybersecurityEndpointModule";
+import { DevOpsAiOpsModule } from "./components/DevOpsAiOpsModule";
+import { EnterpriseDataAnalyticsModule } from "./components/EnterpriseDataAnalyticsModule";
+import { AccessControlPanel } from "./components/AccessControlPanel";
 import { AiArchitect } from "./components/AiArchitect";
 
 export default function App() {
@@ -104,6 +112,38 @@ export default function App() {
 
         {activeTab === "cicd" && (
           <CiCdScanner />
+        )}
+
+        {activeTab === "services" && (
+          <ServicesExplorer />
+        )}
+
+        {activeTab === "saas-architecture" && (
+          <EnterpriseSaaSControlPlane />
+        )}
+
+        {activeTab === "martech-commerce" && (
+          <MartechCommerceModule />
+        )}
+
+        {activeTab === "workspace-lowcode" && (
+          <WorkspaceLowCodeModule />
+        )}
+
+        {activeTab === "cybersecurity-endpoint" && (
+          <CybersecurityEndpointModule />
+        )}
+
+        {activeTab === "devops-aiops" && (
+          <DevOpsAiOpsModule />
+        )}
+
+        {activeTab === "enterprise-data-analytics" && (
+          <EnterpriseDataAnalyticsModule />
+        )}
+
+        {activeTab === "access-control" && (
+          <AccessControlPanel />
         )}
 
         {activeTab === "ai-architect" && (

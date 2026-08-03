@@ -1,0 +1,62 @@
+type Query {
+  architectureNodes(provider: String, status: String): [TopologyNode!]!
+  topologyNode(id: ID!): TopologyNode
+  dataFlowPath(sourceId: ID!, targetId: ID!): DataFlowPath!
+  topologyHealthOverview: TopologyHealthSummary!
+}
+
+type Mutation {
+  updateNodeMetrics(nodeId: ID!, eps: Int, latencyMs: Float): TopologyNode!
+  setNodeStatus(nodeId: ID!, status: NodeStatus!, reason: String): TopologyNode!
+  connectNodes(sourceId: ID!, targetId: ID!, protocol: String!): Boolean!
+}
+
+type Subscription {
+  topologyNodeStatusChanged: TopologyNode!
+  epsMetricUpdated(nodeId: ID!): MetricUpdate!
+}
+
+enum NodeStatus {
+  HEALTHY
+  WARNING
+  DEGRADED
+}
+
+type TopologyNode {
+  id: ID!
+  name: String!
+  category: String!
+  provider: String!
+  status: NodeStatus!
+  description: String!
+  securityControls: [String!]!
+  metrics: NodeMetrics!
+  connectedTo: [String!]!
+}
+
+type NodeMetrics {
+  eps: Int
+  latencyMs: Float
+  encryption: String
+  authMethod: String
+}
+
+type DataFlowPath {
+  nodes: [TopologyNode!]!
+  totalHops: Int!
+  encrypted: Boolean!
+}
+
+type TopologyHealthSummary {
+  totalNodes: Int!
+  healthyCount: Int!
+  warningCount: Int!
+  degradedCount: Int!
+  totalPipelineEps: Int!
+}
+
+type MetricUpdate {
+  nodeId: ID!
+  eps: Int!
+  timestamp: String!
+}

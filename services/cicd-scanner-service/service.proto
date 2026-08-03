@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package devsecops.cicd.v1;
+
+option go_package = "github.com/secops/cicd-scanner-service/gen/v1;cicdv1";
+
+import "google/protobuf/timestamp.proto";
+
+service CiCdScannerService {
+  rpc TriggerPipelineScan (TriggerScanRequest) returns (TriggerScanResponse);
+  rpc GetPipelineStatus (GetStatusRequest) returns (GetStatusResponse);
+  rpc StreamPipelineLogs (StreamLogsRequest) returns (stream PipelineLogChunk);
+  rpc GetCheckovFindings (CheckovRequest) returns (CheckovResponse);
+}
+
+message TriggerScanRequest {
+  string repository_url = 1;
+  string commit_sha = 2;
+  string branch = 3;
+  string triggered_by = 4;
+  map<string, string> environment_variables = 5;
+}
+
+message TriggerScanResponse {
+  string pipeline_run_id = 1;
+  string status = 2;
+  google.protobuf.Timestamp started_at = 3;
+}
+
+message GetStatusRequest {
+  string pipeline_run_id = 1;
+}
+
+message GetStatusResponse {
+  string pipeline_run_id = 1;
+  string overall_status = 2;
+  repeated StageResult stages = 3;
+  int32 total_duration_seconds = 4;
+}
+
+message StageResult {
+  string stage_id = 1;
+  string name = 2;
+  string status = 3;
+  int32 duration_ms = 4;
+  repeated string security_controls_passed = 5;
+}
+
+message StreamLogsRequest {
+  string pipeline_run_id = 1;
+  string stage_id = 2;
+}
+
+message PipelineLogChunk {
+  google.protobuf.Timestamp timestamp = 1;
+  string log_level = 2;
+  string message = 3;
+  string stage_id = 4;
+}
+
+message CheckovRequest {
+  string pipeline_run_id = 1;
+  string severity_filter = 2;
+}
+
+message CheckovResponse {
+  string pipeline_run_id = 1;
+  int32 passed_checks = 2;
+  int32 failed_checks = 3;
+  repeated CheckovFinding findings = 4;
+}
+
+message CheckovFinding {
+  string check_id = 1;
+  string check_name = 2;
+  string severity = 3;
+  string resource = 4;
+  string file_path = 5;
+  string status = 6;
+  string guidance = 7;
+}

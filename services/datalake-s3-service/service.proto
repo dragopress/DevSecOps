@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package devsecops.datalake.v1;
+
+option go_package = "github.com/secops/datalake-s3-service/gen/v1;datalakev1";
+
+service DataLakeS3Service {
+  rpc GetIcebergTables (GetTablesRequest) returns (GetTablesResponse);
+  rpc ExecuteAthenaQuery (AthenaQueryRequest) returns (AthenaQueryResponse);
+  rpc UpdateS3LifecyclePolicy (LifecyclePolicyRequest) returns (LifecyclePolicyResponse);
+}
+
+message GetTablesRequest {
+  string database_name = 1;
+}
+
+message GetTablesResponse {
+  repeated IcebergTableMeta tables = 1;
+}
+
+message IcebergTableMeta {
+  string table_name = 1;
+  string database_name = 2;
+  int64 record_count = 3;
+  double size_gb = 4;
+  repeated string partition_fields = 5;
+  repeated TableColumn schema = 6;
+}
+
+message TableColumn {
+  string name = 1;
+  string data_type = 2;
+  string description = 3;
+}
+
+message AthenaQueryRequest {
+  string sql_query = 1;
+  int32 max_results = 2;
+}
+
+message AthenaQueryResponse {
+  string query_execution_id = 1;
+  int32 execution_time_ms = 2;
+  string bytes_scanned = 3;
+  string snapshot_id = 4;
+  repeated string column_names = 5;
+  repeated string result_rows_json = 6;
+}
+
+message LifecyclePolicyRequest {
+  int32 glacier_transition_days = 1;
+  int32 glacier_expiration_days = 2;
+  string target_bucket = 3;
+}
+
+message LifecyclePolicyResponse {
+  bool policy_applied = 1;
+  string active_policy_json = 2;
+  string estimated_monthly_savings_usd = 3;
+}

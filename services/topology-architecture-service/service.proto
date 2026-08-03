@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package devsecops.topology.v1;
+
+option go_package = "github.com/secops/topology-service/gen/v1;topologyv1";
+
+service TopologyService {
+  rpc GetArchitectureNodes (GetNodesRequest) returns (GetNodesResponse);
+  rpc UpdateNodeStatus (UpdateNodeStatusRequest) returns (UpdateNodeStatusResponse);
+  rpc CalculateDataFlowPath (DataFlowPathRequest) returns (DataFlowPathResponse);
+  rpc ExportTopologyGraph (ExportTopologyRequest) returns (ExportTopologyResponse);
+}
+
+message GetNodesRequest {
+  string environment = 1;
+  string provider_filter = 2;
+}
+
+message GetNodesResponse {
+  repeated TopologyNode nodes = 1;
+  repeated TopologyEdge edges = 2;
+  int32 total_active_eps = 3;
+}
+
+message TopologyNode {
+  string id = 1;
+  string name = 2;
+  string category = 3;
+  string provider = 4;
+  string status = 5;
+  string description = 6;
+  repeated string security_controls = 7;
+  map<string, string> metrics = 8;
+  repeated string connected_to = 9;
+}
+
+message TopologyEdge {
+  string source_id = 1;
+  string target_id = 2;
+  string protocol = 3;
+  bool is_encrypted = 4;
+  int32 throughput_eps = 5;
+}
+
+message UpdateNodeStatusRequest {
+  string node_id = 1;
+  string new_status = 2; // "healthy", "warning", "degraded"
+  string reason = 3;
+}
+
+message UpdateNodeStatusResponse {
+  string node_id = 1;
+  string updated_status = 2;
+  bool success = 3;
+}
+
+message DataFlowPathRequest {
+  string source_node_id = 1;
+  string target_node_id = 2;
+}
+
+message DataFlowPathResponse {
+  repeated string path_node_ids = 1;
+  int32 total_hop_count = 2;
+  bool all_hops_encrypted = 3;
+}
+
+message ExportTopologyRequest {
+  string format = 1; // "json", "dot", "graphml"
+}
+
+message ExportTopologyResponse {
+  string graph_data = 1;
+  string mime_type = 2;
+}

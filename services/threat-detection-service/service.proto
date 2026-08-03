@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package devsecops.threatdetection.v1;
+
+option go_package = "github.com/secops/threat-detection-service/gen/v1;threatv1";
+
+import "google/protobuf/timestamp.proto";
+
+service ThreatDetectionService {
+  rpc ValidateSigmaRule (ValidateRuleRequest) returns (ValidateRuleResponse);
+  rpc TranslateRuleToSIEM (TranslateRequest) returns (TranslateResponse);
+  rpc IngestSecurityLogStream (stream SecurityLogEvent) returns (IngestSummary);
+  rpc SearchMatchedAlerts (AlertSearchRequest) returns (AlertSearchResponse);
+}
+
+message ValidateRuleRequest {
+  string sigma_yaml = 1;
+  bool strict_validation = 2;
+}
+
+message ValidateRuleResponse {
+  bool is_valid = 1;
+  string rule_id = 2;
+  string title = 3;
+  string level = 4;
+  repeated string validation_errors = 5;
+  repeated string warnings = 6;
+}
+
+message TranslateRequest {
+  string sigma_yaml = 1;
+  string target_siem = 2; // "splunk_spl", "elastic_lucene", "aws_athena", "sentinel_kql"
+}
+
+message TranslateResponse {
+  string target_siem = 1;
+  string generated_query = 2;
+  string syntax_highlight_language = 3;
+  int32 estimated_query_cost_units = 4;
+}
+
+message SecurityLogEvent {
+  string id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  string log_source = 3;
+  string raw_json = 4;
+}
+
+message IngestSummary {
+  int64 logs_processed = 1;
+  int64 matches_found = 2;
+  int32 processing_time_ms = 3;
+}
+
+message AlertSearchRequest {
+  string rule_id = 1;
+  string severity_filter = 2;
+  int32 limit = 3;
+}
+
+message AlertSearchResponse {
+  int32 total_matches = 1;
+  repeated SecurityAlert alerts = 2;
+}
+
+message SecurityAlert {
+  string alert_id = 1;
+  string rule_title = 2;
+  string severity = 3;
+  google.protobuf.Timestamp matched_at = 4;
+  string log_payload_json = 5;
+}

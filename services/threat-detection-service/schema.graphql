@@ -1,0 +1,74 @@
+type Query {
+  sigmaRules(level: String, logsource: String, mitreTechnique: String): [SigmaRule!]!
+  sigmaRule(id: ID!): SigmaRule
+  translateRule(sigmaYaml: String!, targetSiem: SiemTarget!): SiemTranslation!
+  searchSecurityLogs(query: String!, limit: Int): [SecurityLogEvent!]!
+}
+
+type Mutation {
+  createSigmaRule(input: CreateSigmaRuleInput!): SigmaRule!
+  validateSigmaYaml(yamlContent: String!): ValidationResult!
+  deleteSigmaRule(id: ID!): Boolean!
+}
+
+type Subscription {
+  liveLogIngestionStream: SecurityLogEvent!
+  threatAlertTriggered: ThreatAlert!
+}
+
+enum SiemTarget {
+  SPLUNK_SPL
+  ELASTIC_LUCENE
+  AWS_ATHENA
+  SENTINEL_KQL
+}
+
+type SigmaRule {
+  id: ID!
+  title: String!
+  level: String!
+  status: String!
+  author: String!
+  mitreAttackId: String
+  tags: [String!]!
+  detectionYaml: String!
+  sampleLogMatch: JSON
+}
+
+type ValidationResult {
+  isValid: Boolean!
+  errors: [String!]!
+  warnings: [String!]!
+}
+
+type SiemTranslation {
+  targetSiem: SiemTarget!
+  generatedQuery: String!
+  language: String!
+}
+
+type SecurityLogEvent {
+  id: ID!
+  timestamp: String!
+  source: String!
+  logPayload: JSON!
+  matchedRules: [String!]!
+  severity: String!
+}
+
+type ThreatAlert {
+  alertId: ID!
+  ruleTitle: String!
+  severity: String!
+  timestamp: String!
+  payload: JSON!
+}
+
+input CreateSigmaRuleInput {
+  title: String!
+  level: String!
+  detectionYaml: String!
+  mitreAttackId: String
+}
+
+scalar JSON

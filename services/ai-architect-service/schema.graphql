@@ -1,0 +1,17 @@
+type Query {
+  analyzePosture(prompt: String!): PostureAnalysis!
+  synthesizeSigma(scenario: String!, logSource: String!, level: String!): SynthesizedSigma!
+}
+
+type PostureAnalysis {
+  analysisText: String!
+  priorityRemediations: [String!]!
+  riskScore: Float!
+}
+
+type SynthesizedSigma {
+  title: String!
+  level: String!
+  mitreAttackId: String
+  detectionYaml: String!
+}

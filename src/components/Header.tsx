@@ -15,7 +15,15 @@ import {
   FileJson,
   CheckCircle2,
   AlertCircle,
-  X
+  X,
+  Boxes,
+  ChevronDown,
+  Layers,
+  ShoppingBag,
+  LayoutGrid,
+  Laptop,
+  Workflow,
+  BarChart3
 } from "lucide-react";
 
 interface HeaderProps {
@@ -41,6 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isConfigMenuOpen, setIsConfigMenuOpen] = useState<boolean>(false);
 
   const tabs: { id: ActiveTab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: "topology", label: "Pipeline Topology", icon: Activity },
@@ -48,16 +57,26 @@ export const Header: React.FC<HeaderProps> = ({
     { id: "threat-detection", label: "Live Threat Engine", icon: ShieldCheck },
     { id: "data-lake", label: "Matano S3 Lake", icon: Database },
     { id: "cicd", label: "DevSecOps CI/CD", icon: GitBranch },
+    { id: "services", label: "Service Repos", icon: Boxes },
+    { id: "saas-architecture", label: "Enterprise SaaS Suite", icon: Layers },
+    { id: "martech-commerce", label: "MarTech & Commerce", icon: ShoppingBag },
+    { id: "workspace-lowcode", label: "Workspace & Low-Code", icon: LayoutGrid },
+    { id: "cybersecurity-endpoint", label: "Cybersecurity & Endpoint Ops", icon: Laptop },
+    { id: "devops-aiops", label: "DevOps & Intelligent Ops", icon: Workflow },
+    { id: "enterprise-data-analytics", label: "DataConnect & Columnar Analytics", icon: BarChart3 },
+    { id: "access-control", label: "RBAC & Permissions", icon: Lock },
     { id: "ai-architect", label: "AI Architect", icon: Bot }
   ];
 
   const handleExportPackage = () => {
-    const pkg: ProjectPackage = {
+    const pkg = {
       version: "1.0.0",
       exportedAt: new Date().toISOString(),
       studio: "DevSecOps Security Pipeline Studio",
       pipelineConfig: vars,
       sigmaRules: rules,
+      vars: vars,
+      rules: rules,
       activeRuleId: rules[0]?.id
     };
 
@@ -65,7 +84,7 @@ export const Header: React.FC<HeaderProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `secops-pipeline-${vars.environment}-${new Date().toISOString().split("T")[0]}.json`;
+    link.download = `secops-config-${vars.environment}-${new Date().toISOString().split("T")[0]}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -73,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
 
     setToastMessage({
       type: "success",
-      text: `Exported pipeline configuration & ${rules.length} Sigma rules as unified JSON package!`
+      text: `Exported vars configuration & ${rules.length} Sigma rules as JSON!`
     });
     setTimeout(() => setToastMessage(null), 4000);
   };
@@ -86,24 +105,35 @@ export const Header: React.FC<HeaderProps> = ({
     reader.onload = (event) => {
       try {
         const text = event.target?.result as string;
-        const parsed = JSON.parse(text) as ProjectPackage;
+        const parsed = JSON.parse(text);
 
-        if (!parsed.pipelineConfig && !parsed.sigmaRules && !(parsed as any).rules) {
-          throw new Error("Missing required pipelineConfig or sigmaRules sections in JSON package.");
+        const loadedVars = parsed.pipelineConfig || parsed.vars;
+        const loadedRules = parsed.sigmaRules || parsed.rules;
+
+        if (!loadedVars && !loadedRules) {
+          throw new Error("Invalid JSON file. Missing 'vars'/'pipelineConfig' or 'rules'/'sigmaRules'.");
         }
 
-        onImportPackage(parsed);
+        const projectPkg: ProjectPackage = {
+          version: parsed.version || "1.0.0",
+          exportedAt: parsed.exportedAt || new Date().toISOString(),
+          studio: parsed.studio || "DevSecOps Security Pipeline Studio",
+          pipelineConfig: loadedVars || vars,
+          sigmaRules: loadedRules || rules
+        };
 
-        const importedRuleCount = parsed.sigmaRules?.length || (parsed as any).rules?.length || 0;
+        onImportPackage(projectPkg);
+
+        const importedRuleCount = (loadedRules && Array.isArray(loadedRules)) ? loadedRules.length : rules.length;
         setToastMessage({
           type: "success",
-          text: `Restored environment: ${parsed.pipelineConfig?.projectName || vars.projectName} (${parsed.pipelineConfig?.environment || vars.environment}) with ${importedRuleCount} Sigma rules!`
+          text: `Restored configuration! Loaded environment (${(loadedVars && loadedVars.environment) || vars.environment}) with ${importedRuleCount} rules.`
         });
         setTimeout(() => setToastMessage(null), 5000);
       } catch (err: any) {
         setToastMessage({
           type: "error",
-          text: `Import failed: ${err.message || "Invalid JSON package file format."}`
+          text: `Import failed: ${err.message || "Invalid JSON configuration format."}`
         });
         setTimeout(() => setToastMessage(null), 5000);
       }
@@ -195,24 +225,75 @@ export const Header: React.FC<HeaderProps> = ({
             ))}
           </div>
 
-          {/* Unified Project Export / Import Package Buttons */}
-          <div className="flex items-center space-x-1 pl-1 border-l border-slate-800">
+          {/* Download/Upload Configuration Control */}
+          <div className="relative flex items-center space-x-1 pl-1 border-l border-slate-800">
+            <button
+              onClick={() => setIsConfigMenuOpen(!isConfigMenuOpen)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs rounded-lg transition-all shadow-md shadow-cyan-950/40 border border-cyan-400/30 cursor-pointer"
+              title="Download or Upload pipeline configuration (vars) and Sigma rules as JSON"
+            >
+              <FileJson className="w-4 h-4 text-cyan-200" />
+              <span>Download/Upload Configuration</span>
+              <ChevronDown className="w-3.5 h-3.5 ml-0.5 opacity-80" />
+            </button>
+
+            {isConfigMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-72 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-2xl p-2 z-50 animate-fade-in text-xs">
+                <div className="px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 border-b border-slate-800 uppercase tracking-wider flex items-center justify-between">
+                  <span>Configuration Package</span>
+                  <span className="text-[10px] text-cyan-400 font-mono">JSON</span>
+                </div>
+                
+                <button
+                  onClick={() => {
+                    handleExportPackage();
+                    setIsConfigMenuOpen(false);
+                  }}
+                  className="w-full flex items-center space-x-3 px-3 py-2.5 mt-1 rounded-lg hover:bg-cyan-950/60 hover:text-cyan-300 text-slate-200 transition-colors text-left group cursor-pointer border border-transparent hover:border-cyan-800/50"
+                >
+                  <div className="p-1.5 bg-cyan-500/10 rounded-md text-cyan-400 group-hover:bg-cyan-500/20">
+                    <Download className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-cyan-100">Download Configuration</div>
+                    <div className="text-[10px] text-slate-400">Save current vars & rules state to JSON</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setIsConfigMenuOpen(false);
+                  }}
+                  className="w-full flex items-center space-x-3 px-3 py-2.5 mt-1 rounded-lg hover:bg-amber-950/60 hover:text-amber-300 text-slate-200 transition-colors text-left group cursor-pointer border border-transparent hover:border-amber-800/50"
+                >
+                  <div className="p-1.5 bg-amber-500/10 rounded-md text-amber-400 group-hover:bg-amber-500/20">
+                    <Upload className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-amber-100">Upload Configuration</div>
+                    <div className="text-[10px] text-slate-400">Load JSON file to restore vars & rules</div>
+                  </div>
+                </button>
+              </div>
+            )}
+
             <button
               onClick={handleExportPackage}
-              className="flex items-center space-x-1 px-2.5 py-1.5 bg-blue-600/90 hover:bg-blue-500 text-white font-medium rounded-lg transition-all border border-blue-500 shadow-sm cursor-pointer"
-              title="Export complete pipeline config and Sigma rules as JSON"
+              className="flex items-center space-x-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg transition-all border border-slate-700 cursor-pointer text-xs"
+              title="Download vars & rules state as JSON"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export Package</span>
+              <Download className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Download</span>
             </button>
 
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center space-x-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 font-medium rounded-lg transition-all border border-slate-700 cursor-pointer"
-              title="Import saved project JSON package to restore pipeline and rules"
+              className="flex items-center space-x-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg transition-all border border-slate-700 cursor-pointer text-xs"
+              title="Upload JSON file to restore vars & rules"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import Package</span>
+              <Upload className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Upload</span>
             </button>
 
             <input

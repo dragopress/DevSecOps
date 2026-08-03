@@ -1,0 +1,73 @@
+type Query {
+  pipelineRun(id: ID!): PipelineRun
+  listPipelineRuns(limit: Int, status: String): [PipelineRun!]!
+  checkovFindings(pipelineId: ID!, severity: CheckovSeverity): [CheckovFinding!]!
+}
+
+type Mutation {
+  triggerScan(input: TriggerScanInput!): PipelineRun!
+  cancelScan(pipelineId: ID!): Boolean!
+}
+
+type Subscription {
+  pipelineStatusChanged(pipelineId: ID!): PipelineRun!
+  pipelineLogStream(pipelineId: ID!): PipelineLogEntry!
+}
+
+input TriggerScanInput {
+  repoUrl: String!
+  commitSha: String!
+  branch: String
+  envVars: JSON
+}
+
+enum CheckovSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+type PipelineRun {
+  id: ID!
+  commitSha: String!
+  branch: String!
+  status: String!
+  startedAt: String!
+  completedAt: String
+  stages: [PipelineStage!]!
+  checkovSummary: CheckovSummary!
+}
+
+type PipelineStage {
+  id: ID!
+  name: String!
+  status: String!
+  durationMs: Int!
+  securitySubChecks: [String!]!
+}
+
+type CheckovSummary {
+  passed: Int!
+  failed: Int!
+  criticalCount: Int!
+}
+
+type CheckovFinding {
+  checkId: String!
+  checkName: String!
+  severity: CheckovSeverity!
+  resource: String!
+  filePath: String!
+  status: String!
+  guidance: String!
+}
+
+type PipelineLogEntry {
+  timestamp: String!
+  level: String!
+  message: String!
+  stageId: String!
+}
+
+scalar JSON
