@@ -46,6 +46,9 @@ export interface SigmaRule {
   description: string;
   detectionYaml: string;
   sampleLogMatch: Record<string, any>;
+  mitreAttackId?: string;
+  tags?: string[];
+  categoryName?: string;
 }
 
 export interface SecurityLogEvent {

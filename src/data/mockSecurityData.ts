@@ -121,6 +121,8 @@ export const defaultSigmaRules: SigmaRule[] = [
     level: "high",
     status: "production",
     author: "SecOps Threat Team",
+    mitreAttackId: "T1110.001",
+    tags: ["Brute Force", "SSH", "Linux", "Authentication"],
     logsource: {
       category: "auth",
       product: "linux",
@@ -130,6 +132,9 @@ export const defaultSigmaRules: SigmaRule[] = [
     detectionYaml: `title: SSH Brute Force Authentication
 id: f4a88398-31bc-49e0-8a18-d018bf14352f
 status: production
+tags:
+  - attack.t1110.001
+  - attack.credential_access
 logsource:
   category: authentication
   product: linux
@@ -155,6 +160,8 @@ level: high`,
     level: "critical",
     status: "production",
     author: "Detection Engineering",
+    mitreAttackId: "T1071.004",
+    tags: ["DNS", "C2", "Zeek", "Cobalt Strike"],
     logsource: {
       category: "dns",
       product: "zeek",
@@ -164,6 +171,9 @@ level: high`,
     detectionYaml: `title: Cobalt Strike C2 DNS Tunneling
 id: a8c2019b-2200-4e31-901d-55198bc72101
 status: production
+tags:
+  - attack.t1071.004
+  - attack.command_and_control
 logsource:
   category: dns
   product: zeek
@@ -191,6 +201,8 @@ level: critical`,
     level: "high",
     status: "production",
     author: "Cloud DevSecOps",
+    mitreAttackId: "T1098.003",
+    tags: ["AWS", "IAM", "CloudTrail", "Privilege Escalation"],
     logsource: {
       service: "cloudtrail",
       product: "aws"
@@ -199,6 +211,9 @@ level: critical`,
     detectionYaml: `title: AWS IAM Privilege Escalation
 id: 991823ab-2001-44ee-b12a-00192837462a
 status: production
+tags:
+  - attack.t1098.003
+  - attack.persistence
 logsource:
   service: cloudtrail
   product: aws
@@ -226,6 +241,8 @@ level: high`,
     level: "high",
     status: "production",
     author: "Cloud SecOps",
+    mitreAttackId: "T1530",
+    tags: ["S3", "Exfiltration", "AWS", "Data Leak"],
     logsource: {
       service: "s3",
       product: "aws"
@@ -234,6 +251,9 @@ level: high`,
     detectionYaml: `title: S3 Data Exfiltration Detection
 id: c19283a0-1283-4921-b019-123982371239
 status: production
+tags:
+  - attack.t1530
+  - attack.exfiltration
 logsource:
   service: s3
   product: aws

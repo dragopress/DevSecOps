@@ -93,6 +93,12 @@ export const ThreatDetectionSandbox: React.FC<ThreatDetectionSandboxProps> = ({
   const [showTemplateLibrary, setShowTemplateLibrary] = useState<boolean>(true);
   const [templateAppliedToast, setTemplateAppliedToast] = useState<string | null>(null);
 
+  // Active Rules Search & Filter State
+  const [ruleSearchQuery, setRuleSearchQuery] = useState<string>("");
+  const [ruleSeverityFilter, setRuleSeverityFilter] = useState<string>("all");
+  const [ruleLogSourceFilter, setRuleLogSourceFilter] = useState<string>("all");
+  const [ruleMitreFilter, setRuleMitreFilter] = useState<string>("all");
+
   const handleSelectTemplate = (template: SigmaTemplate) => {
     const exists = rules.some(r => r.id === template.id);
     if (!exists) {
@@ -443,6 +449,73 @@ falsepositives:
 
   const filteredLogs = logs.filter(l => filterSeverity === "all" || l.severity === filterSeverity);
 
+  // Filter active rules based on search query, severity, logsource, and MITRE ATT&CK technique
+  const filteredActiveRules = rules.filter(rule => {
+    // 1. Search Query
+    if (ruleSearchQuery.trim()) {
+      const q = ruleSearchQuery.toLowerCase().trim();
+      const titleMatch = rule.title.toLowerCase().includes(q);
+      const descMatch = rule.description.toLowerCase().includes(q);
+      const yamlMatch = rule.detectionYaml.toLowerCase().includes(q);
+      const mitreMatch = rule.mitreAttackId ? rule.mitreAttackId.toLowerCase().includes(q) : false;
+      const tagsMatch = rule.tags ? rule.tags.some(t => t.toLowerCase().includes(q)) : false;
+      const authorMatch = rule.author ? rule.author.toLowerCase().includes(q) : false;
+      const logsourceMatch =
+        (rule.logsource.product && rule.logsource.product.toLowerCase().includes(q)) ||
+        (rule.logsource.service && rule.logsource.service.toLowerCase().includes(q)) ||
+        (rule.logsource.category && rule.logsource.category.toLowerCase().includes(q));
+
+      if (!titleMatch && !descMatch && !yamlMatch && !mitreMatch && !tagsMatch && !authorMatch && !logsourceMatch) {
+        return false;
+      }
+    }
+
+    // 2. Severity Filter
+    if (ruleSeverityFilter !== "all") {
+      if (rule.level !== ruleSeverityFilter) {
+        return false;
+      }
+    }
+
+    // 3. Log Source Filter
+    if (ruleLogSourceFilter !== "all") {
+      const targetLs = ruleLogSourceFilter.toLowerCase();
+      const prod = (rule.logsource.product || "").toLowerCase();
+      const serv = (rule.logsource.service || "").toLowerCase();
+      const cat = (rule.logsource.category || "").toLowerCase();
+      const yaml = rule.detectionYaml.toLowerCase();
+
+      const matchesLs = prod.includes(targetLs) || serv.includes(targetLs) || cat.includes(targetLs) || yaml.includes(targetLs);
+      if (!matchesLs) return false;
+    }
+
+    // 4. MITRE ATT&CK Filter
+    if (ruleMitreFilter !== "all") {
+      const targetMitre = ruleMitreFilter.toLowerCase();
+      const ruleMitre = (rule.mitreAttackId || "").toLowerCase();
+      const ruleYaml = rule.detectionYaml.toLowerCase();
+      const ruleTags = (rule.tags || []).map(t => t.toLowerCase());
+
+      const matchesMitre =
+        ruleMitre.includes(targetMitre) ||
+        ruleTags.some(t => t.includes(targetMitre)) ||
+        ruleYaml.includes(targetMitre);
+
+      if (!matchesMitre) return false;
+    }
+
+    return true;
+  });
+
+  const hasActiveRuleFilters = ruleSearchQuery.trim() !== "" || ruleSeverityFilter !== "all" || ruleLogSourceFilter !== "all" || ruleMitreFilter !== "all";
+
+  const clearAllRuleFilters = () => {
+    setRuleSearchQuery("");
+    setRuleSeverityFilter("all");
+    setRuleLogSourceFilter("all");
+    setRuleMitreFilter("all");
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -772,36 +845,215 @@ falsepositives:
               )}
             </div>
 
-            {/* Loaded Active Rules Bar */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">Active Loaded Rules ({rules.length})</label>
-              <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
-                {rules.map((rule) => (
+            {/* Loaded Active Rules Bar with Search & Multi-Filter System */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-3">
+              {/* Section Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-4 h-4 text-cyan-400" />
+                  <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                    Active Loaded Rules ({filteredActiveRules.length} / {rules.length})
+                  </span>
+                </div>
+
+                {hasActiveRuleFilters && (
                   <button
-                    key={rule.id}
-                    onClick={() => {
-                      setSelectedRule(rule);
-                      setRuleYaml(rule.detectionYaml);
-                    }}
-                    className={`w-full text-left p-2 rounded-lg border text-xs transition-all flex items-center justify-between cursor-pointer ${
-                      selectedRule.id === rule.id
-                        ? "bg-blue-900/60 border-blue-500 text-white font-bold shadow-2xs"
-                        : "bg-slate-900/70 border-slate-800 text-slate-300 hover:bg-slate-800"
-                    }`}
+                    type="button"
+                    onClick={clearAllRuleFilters}
+                    className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
                   >
-                    <div className="truncate pr-2">
-                      <div className="truncate font-semibold text-slate-100">{rule.title}</div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{rule.logsource.product || "generic"} / {rule.logsource.service || rule.logsource.category || "security"}</div>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold shrink-0 ${
-                      rule.level === 'critical' ? 'bg-red-950 text-red-300 border border-red-800' :
-                      rule.level === 'high' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
-                      'bg-blue-950 text-blue-300 border border-blue-800'
-                    }`}>
-                      {rule.level}
-                    </span>
+                    <RefreshCw className="w-3 h-3 text-cyan-400" />
+                    <span>Reset Filters</span>
                   </button>
-                ))}
+                )}
+              </div>
+
+              {/* Search Bar Input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={ruleSearchQuery}
+                  onChange={(e) => setRuleSearchQuery(e.target.value)}
+                  placeholder="Search rules by title, YAML, technique (e.g., T1110, sshd, exfiltration)..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-8 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                />
+                {ruleSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setRuleSearchQuery("")}
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-200 font-mono text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Dropdown Filters Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                {/* Severity Filter Dropdown */}
+                <div>
+                  <label className="block text-[10px] font-mono text-slate-400 mb-1 flex items-center gap-1">
+                    <ShieldAlert className="w-3 h-3 text-amber-400" />
+                    Severity Level
+                  </label>
+                  <select
+                    value={ruleSeverityFilter}
+                    onChange={(e) => setRuleSeverityFilter(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
+                  >
+                    <option value="all">All Severities ({rules.length})</option>
+                    <option value="critical">Critical ({rules.filter(r => r.level === "critical").length})</option>
+                    <option value="high">High ({rules.filter(r => r.level === "high").length})</option>
+                    <option value="medium">Medium ({rules.filter(r => r.level === "medium").length})</option>
+                    <option value="low">Low ({rules.filter(r => r.level === "low").length})</option>
+                  </select>
+                </div>
+
+                {/* Log Source Filter Dropdown */}
+                <div>
+                  <label className="block text-[10px] font-mono text-slate-400 mb-1 flex items-center gap-1">
+                    <Database className="w-3 h-3 text-cyan-400" />
+                    Log Source
+                  </label>
+                  <select
+                    value={ruleLogSourceFilter}
+                    onChange={(e) => setRuleLogSourceFilter(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
+                  >
+                    <option value="all">All Log Sources</option>
+                    <option value="linux">Linux / SSHD</option>
+                    <option value="zeek">Zeek DNS</option>
+                    <option value="cloudtrail">AWS CloudTrail</option>
+                    <option value="s3">AWS S3 Storage</option>
+                    <option value="vpc_flow">AWS VPC Flow Logs</option>
+                    <option value="crowdstrike">CrowdStrike EDR</option>
+                    <option value="kubernetes">Kubernetes Audit</option>
+                    <option value="syslog">Syslog Auth</option>
+                  </select>
+                </div>
+
+                {/* MITRE ATT&CK Technique Filter Dropdown */}
+                <div>
+                  <label className="block text-[10px] font-mono text-slate-400 mb-1 flex items-center gap-1">
+                    <Tag className="w-3 h-3 text-purple-400" />
+                    MITRE ATT&CK
+                  </label>
+                  <select
+                    value={ruleMitreFilter}
+                    onChange={(e) => setRuleMitreFilter(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
+                  >
+                    <option value="all">All MITRE Techniques</option>
+                    <option value="t1110">T1110 - Brute Force</option>
+                    <option value="t1071">T1071 - C2 Application Protocol</option>
+                    <option value="t1098">T1098 - Account Manipulation / IAM</option>
+                    <option value="t1530">T1530 - Data from Cloud Storage</option>
+                    <option value="t1078">T1078 - Valid Accounts</option>
+                    <option value="t1059">T1059 - Command & Scripting</option>
+                    <option value="t1486">T1486 - Data Encrypted for Impact</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Active Filter Chips / Pills */}
+              {hasActiveRuleFilters && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[10px] font-mono border-t border-slate-800/80">
+                  <span className="text-slate-500">Active Filters:</span>
+                  {ruleSearchQuery && (
+                    <span className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 flex items-center gap-1">
+                      Query: "{ruleSearchQuery}"
+                      <button onClick={() => setRuleSearchQuery("")} className="hover:text-white cursor-pointer ml-1">✕</button>
+                    </span>
+                  )}
+                  {ruleSeverityFilter !== "all" && (
+                    <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 flex items-center gap-1 uppercase font-bold">
+                      Severity: {ruleSeverityFilter}
+                      <button onClick={() => setRuleSeverityFilter("all")} className="hover:text-white cursor-pointer ml-1">✕</button>
+                    </span>
+                  )}
+                  {ruleLogSourceFilter !== "all" && (
+                    <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 flex items-center gap-1">
+                      Source: {ruleLogSourceFilter}
+                      <button onClick={() => setRuleLogSourceFilter("all")} className="hover:text-white cursor-pointer ml-1">✕</button>
+                    </span>
+                  )}
+                  {ruleMitreFilter !== "all" && (
+                    <span className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 flex items-center gap-1">
+                      MITRE: {ruleMitreFilter.toUpperCase()}
+                      <button onClick={() => setRuleMitreFilter("all")} className="hover:text-white cursor-pointer ml-1">✕</button>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Filtered Rules Cards List */}
+              <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-0.5">
+                {filteredActiveRules.length === 0 ? (
+                  <div className="p-4 text-center bg-slate-950/60 border border-slate-800 rounded-lg space-y-2">
+                    <p className="text-xs text-slate-400">No Sigma rules match the selected filter criteria.</p>
+                    <button
+                      type="button"
+                      onClick={clearAllRuleFilters}
+                      className="px-3 py-1 bg-cyan-950 text-cyan-300 border border-cyan-800 text-xs font-mono rounded-md hover:bg-cyan-900 transition-all cursor-pointer"
+                    >
+                      Reset All Filters
+                    </button>
+                  </div>
+                ) : (
+                  filteredActiveRules.map((rule) => {
+                    const isSelected = selectedRule.id === rule.id;
+                    const mitreTag = rule.mitreAttackId || (rule.tags && rule.tags.find(t => /^t\d/i.test(t) || t.includes("attack.t")));
+
+                    return (
+                      <button
+                        key={rule.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRule(rule);
+                          setRuleYaml(rule.detectionYaml);
+                        }}
+                        className={`w-full text-left p-2.5 rounded-lg border text-xs transition-all flex items-center justify-between cursor-pointer space-x-2 ${
+                          isSelected
+                            ? "bg-blue-900/70 border-blue-500 text-white font-bold shadow-md ring-1 ring-blue-500"
+                            : "bg-slate-950/80 border-slate-800/90 text-slate-300 hover:bg-slate-800/80 hover:border-slate-700"
+                        }`}
+                      >
+                        <div className="truncate flex-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="truncate font-semibold text-slate-100">{rule.title}</span>
+                            {isSelected && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-800 shrink-0">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-1 flex-wrap">
+                            <span className="bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                              {rule.logsource.product || "generic"} / {rule.logsource.service || rule.logsource.category || "security"}
+                            </span>
+                            
+                            {mitreTag && (
+                              <span className="bg-purple-950/80 text-purple-300 px-1.5 py-0.5 rounded border border-purple-800/80 flex items-center gap-0.5 font-bold">
+                                <Tag className="w-2.5 h-2.5" />
+                                {mitreTag.replace(/^attack\./i, "").toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono font-bold shrink-0 ${
+                          rule.level === 'critical' ? 'bg-red-950 text-red-300 border border-red-800' :
+                          rule.level === 'high' ? 'bg-amber-950 text-amber-300 border border-amber-800' :
+                          'bg-blue-950 text-blue-300 border border-blue-800'
+                        }`}>
+                          {rule.level}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
